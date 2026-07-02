@@ -1,0 +1,1 @@
+"""OrderMind automated tests."""

@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0",
+  "notes": "OrderMind 0.1.0 first MVP release metadata scaffold.",
+  "pub_date": "2026-07-02T00:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "REPLACE_WITH_TAURI_SIGNATURE",
+      "url": "https://example.com/ordermind/releases/0.1.0/OrderMind_0.1.0_aarch64.dmg"
+    },
+    "darwin-x86_64": {
+      "signature": "REPLACE_WITH_TAURI_SIGNATURE",
+      "url": "https://example.com/ordermind/releases/0.1.0/OrderMind_0.1.0_x64.dmg"
+    },
+    "windows-x86_64": {
+      "signature": "REPLACE_WITH_TAURI_SIGNATURE",
+      "url": "https://example.com/ordermind/releases/0.1.0/OrderMind_0.1.0_x64-setup.exe"
+    }
+  }
+}

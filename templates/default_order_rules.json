@@ -1,0 +1,22 @@
+{
+  "name": "默认审单规则",
+  "required_fields": [
+    "item_no",
+    "product_name",
+    "quantity",
+    "unit_price"
+  ],
+  "item_no_pattern": "^[A-Z]{2}-\\d{4}$",
+  "allowed_units": [
+    "PCS",
+    "SET",
+    "KG"
+  ],
+  "total_amount_tolerance": "0.05",
+  "line_amount_tolerance": "0.02",
+  "decimal_places": 2,
+  "spare_ratio": null,
+  "quantity_tolerance": "0",
+  "material_keywords": [],
+  "packaging_keywords": []
+}

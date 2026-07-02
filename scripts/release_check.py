@@ -1,0 +1,68 @@
+"""发布前检查脚本。
+
+这个脚本不负责真正打包，而是检查每个版本发布前必须存在的元数据。
+这样可以避免“代码能跑，但没有版本号、变更日志、升级清单”的交付问题。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def validate_release_readiness(root: Path) -> list[str]:
+    """检查发布所需的版本号、变更日志和升级清单。"""
+
+    errors: list[str] = []
+    version_path = root / "VERSION"
+    changelog_path = root / "CHANGELOG.md"
+    manifest_path = root / "release" / "update-manifest.example.json"
+
+    if not version_path.exists():
+        errors.append("VERSION 文件缺失")
+        return errors
+
+    version = version_path.read_text(encoding="utf-8").strip()
+    if not VERSION_RE.match(version):
+        errors.append("VERSION 必须使用语义化版本号，例如 0.1.0")
+
+    if not changelog_path.exists():
+        errors.append("CHANGELOG.md 文件缺失")
+    elif f"## {version}" not in changelog_path.read_text(encoding="utf-8"):
+        errors.append(f"CHANGELOG.md 缺少当前版本 {version} 的记录")
+
+    if not manifest_path.exists():
+        errors.append("release/update-manifest.example.json 文件缺失")
+    else:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"升级清单 JSON 格式错误: {exc}")
+        else:
+            if manifest.get("version") != version:
+                errors.append("升级清单版本号必须与 VERSION 一致")
+            platforms = manifest.get("platforms", {})
+            for platform in ("darwin-aarch64", "windows-x86_64"):
+                if platform not in platforms:
+                    errors.append(f"升级清单缺少平台: {platform}")
+
+    return errors
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[1]
+    errors = validate_release_readiness(root)
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}")
+        return 1
+    print("Release metadata check passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

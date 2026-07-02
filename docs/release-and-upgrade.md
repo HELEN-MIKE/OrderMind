@@ -1,0 +1,205 @@
+# OrderMind 发布、安装包与升级方案
+
+## 1. 发布目标
+
+从现在开始，OrderMind 每个对客户试用的版本都应产出可安装应用，而不只是源码或本地脚本。
+
+每个客户试用版本必须包含：
+
+- Mac 安装包。
+- Windows 安装包。
+- 版本号。
+- 变更日志。
+- 升级说明。
+- 回滚说明。
+- 发布前测试记录。
+
+## 2. 版本号规则
+
+使用语义化版本：
+
+```text
+主版本.次版本.修订版本
+```
+
+示例：
+
+```text
+0.1.0
+0.2.0
+1.0.0
+```
+
+文件位置：
+
+```text
+VERSION
+CHANGELOG.md
+release/update-manifest.example.json
+```
+
+发布前必须运行：
+
+```bash
+python3 scripts/release_check.py
+```
+
+## 3. 安装包要求
+
+### Mac
+
+正式发布建议产物：
+
+```text
+OrderMind_版本号_aarch64.dmg
+OrderMind_版本号_x64.dmg
+```
+
+如果只服务 Apple Silicon Mac，可以先产出：
+
+```text
+OrderMind_版本号_aarch64.dmg
+```
+
+### Windows
+
+正式发布建议产物：
+
+```text
+OrderMind_版本号_x64-setup.exe
+```
+
+也可以额外提供：
+
+```text
+OrderMind_版本号_x64.msi
+```
+
+## 4. 推荐技术路线
+
+正式桌面应用建议使用：
+
+```text
+Tauri 2 + 前端 UI + 本地 OrderMind 核心服务
+```
+
+原因：
+
+- 可生成 Mac 和 Windows 安装包。
+- 支持应用内更新。
+- 支持签名更新包。
+- 应用体积相对 Electron 更小。
+
+Tauri 官方更新插件要求更新包签名。正式发布时必须生成私钥/公钥，并把公钥配置进应用，把每个安装包的签名写入更新清单。
+
+## 5. 升级机制
+
+推荐升级流程：
+
+```text
+应用启动
+  -> 检查当前版本
+  -> 请求更新清单
+  -> 如果有新版本，显示更新说明
+  -> 用户确认
+  -> 下载新安装包
+  -> 校验签名
+  -> 安装升级
+  -> 重启应用
+```
+
+更新清单示例：
+
+```text
+release/update-manifest.example.json
+```
+
+正式环境需要把示例里的 `example.com`、签名和安装包文件名替换成真实发布地址。
+
+## 6. 客户升级策略
+
+### 试用阶段
+
+建议使用“手动升级 + 应用内提醒”：
+
+- 应用提示有新版本。
+- 用户点击下载地址。
+- 客户下载安装包覆盖安装。
+- 本地数据保留。
+
+这样实现简单，适合早期客户试用。
+
+### 正式阶段
+
+建议升级为“应用内自动更新”：
+
+- 应用自动检查新版本。
+- 下载签名安装包。
+- 自动完成升级。
+- 失败时保留旧版本。
+
+## 7. 本地数据迁移
+
+每个版本发布时必须说明是否涉及数据迁移。
+
+第一版当前数据：
+
+```text
+data/users.json
+templates/*.json
+```
+
+后续迁移到 SQLite 时必须提供迁移脚本：
+
+```text
+scripts/migrate_data.py
+```
+
+迁移原则：
+
+- 不删除用户旧数据。
+- 迁移前创建备份。
+- 迁移失败时可回滚。
+- CHANGELOG 记录迁移影响。
+
+## 8. 发布前门禁
+
+每次打包前必须执行：
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 -m compileall ordermind run_app.py scripts
+python3 scripts/release_check.py
+python3 -m ordermind.cli samples/sample_order.txt --template templates/default_order_rules.json
+python3 -m ordermind.cli samples/sample_order.xlsx --template templates/default_order_rules.json
+```
+
+全部通过后，才可以打包给客户试用。
+
+## 9. 当前状态
+
+当前 `0.1.0` 版本已经建立发布元数据和升级规划，但还没有正式桌面壳。
+
+下一步应做：
+
+- 搭建 Tauri 桌面壳。
+- 把当前本地 Web 工作台迁移为桌面窗口。
+- 配置 Mac/Windows 打包。
+- 配置 Tauri updater。
+- 增加 GitHub Actions 或其他 CI，同时在 macOS 和 Windows 上构建安装包。
+
+## 10. CI 构建建议
+
+建议使用构建矩阵：
+
+```text
+macos-latest   -> 生成 dmg
+windows-latest -> 生成 setup.exe / msi
+```
+
+注意：
+
+- Mac 安装包需要在 macOS 环境构建。
+- Windows 安装包需要在 Windows 环境构建。
+- 代码签名和公证会影响客户电脑能否顺利安装。
+- 早期内测可以先不签名，但客户正式试用前应规划签名。
