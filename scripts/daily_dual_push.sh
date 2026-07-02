@@ -31,5 +31,15 @@ if [ "$has_worktree_changes" -eq 1 ]; then
   fi
 fi
 
-git push origin "$branch"
-git push gitee "$branch"
+failed_remotes=()
+
+for remote in origin gitee; do
+  if ! git push "$remote" "$branch"; then
+    failed_remotes+=("$remote")
+  fi
+done
+
+if [ "${#failed_remotes[@]}" -gt 0 ]; then
+  printf 'Failed to push to: %s\n' "${failed_remotes[*]}" >&2
+  exit 1
+fi
