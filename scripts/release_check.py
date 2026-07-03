@@ -21,6 +21,9 @@ def validate_release_readiness(root: Path) -> list[str]:
     version_path = root / "VERSION"
     changelog_path = root / "CHANGELOG.md"
     manifest_path = root / "release" / "update-manifest.example.json"
+    desktop_main_path = root / "desktop" / "main.cjs"
+    desktop_package_path = root / "package.json"
+    desktop_sidecar_script_path = root / "scripts" / "build_desktop_sidecar.py"
 
     if not version_path.exists():
         errors.append("VERSION 文件缺失")
@@ -49,6 +52,13 @@ def validate_release_readiness(root: Path) -> list[str]:
             for platform in ("darwin-aarch64", "windows-x86_64"):
                 if platform not in platforms:
                     errors.append(f"升级清单缺少平台: {platform}")
+
+    if not desktop_package_path.exists():
+        errors.append("package.json 桌面打包配置缺失")
+    if not desktop_main_path.exists():
+        errors.append("desktop/main.cjs 桌面壳入口缺失")
+    if not desktop_sidecar_script_path.exists():
+        errors.append("scripts/build_desktop_sidecar.py 桌面后端打包脚本缺失")
 
     return errors
 

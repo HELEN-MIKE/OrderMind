@@ -92,6 +92,17 @@ Tauri 2 + 前端 UI + 本地 OrderMind 核心服务
 
 Tauri 官方更新插件要求更新包签名。正式发布时必须生成私钥/公钥，并把公钥配置进应用，把每个安装包的签名写入更新清单。
 
+### 当前实现路线
+
+当前仓库先采用 Electron 桌面壳包裹本地 Python Web 工作台：
+
+- Electron 负责打开原生桌面窗口。
+- Python 后端使用 PyInstaller 打成 sidecar 可执行文件。
+- 桌面壳启动时自动选择本机端口，并通过 `/health` 等待后端就绪。
+- 用户数据写入桌面应用数据目录，不写入源码仓库的 `data/users.json`。
+
+选择 Electron 是为了先产出可双击运行和可安装的客户试用版；后续如果需要更小体积和更强签名更新能力，再迁移到 Tauri。
+
 ## 5. 升级机制
 
 推荐升级流程：
@@ -172,20 +183,36 @@ python3 -m compileall ordermind run_app.py scripts
 python3 scripts/release_check.py
 python3 -m ordermind.cli samples/sample_order.txt --template templates/default_order_rules.json
 python3 -m ordermind.cli samples/sample_order.xlsx --template templates/default_order_rules.json
+npm install
+python3 -m venv .venv-build
+.venv-build/bin/python -m pip install pyinstaller==6.21.0
+npm run desktop:dist:mac
 ```
 
 全部通过后，才可以打包给客户试用。
 
+当前 Mac 默认生成 `.zip` 客户试用包。`.dmg` 目标保留为独立命令：
+
+```bash
+npm run desktop:dist:mac:dmg
+```
+
+Windows 安装包需要在 Windows 构建环境中运行：
+
+```bash
+npm run desktop:dist:win
+```
+
 ## 9. 当前状态
 
-当前 `0.1.0` 版本已经建立发布元数据和升级规划，但还没有正式桌面壳。
+当前 `0.1.0` 版本已经建立发布元数据、升级规划和 Electron 桌面壳配置。
 
 下一步应做：
 
-- 搭建 Tauri 桌面壳。
-- 把当前本地 Web 工作台迁移为桌面窗口。
-- 配置 Mac/Windows 打包。
-- 配置 Tauri updater。
+- 在 macOS 上生成并验收 `.zip`，具备签名和 DMG 构建条件后再生成 `.dmg`。
+- 在 Windows 或 CI 上生成并验收 `.exe` / `.msi`。
+- 规划代码签名、公证和自动更新。
+- 后续评估是否迁移到 Tauri updater。
 - 增加 GitHub Actions 或其他 CI，同时在 macOS 和 Windows 上构建安装包。
 
 ## 10. CI 构建建议

@@ -42,6 +42,8 @@ Electron + React/Vue + Node/Python worker
 
 优点是生态成熟、开发快；缺点是应用体积更大。
 
+当前阶段先采用 Electron，因为本机开发环境已经具备 Node/npm，可以更快产出可双击运行的客户试用包。Tauri 仍作为后续正式产品化路线保留。
+
 ## 3. 当前第一版形态
 
 当前第一版使用：
@@ -148,9 +150,16 @@ pyinstaller --onefile run_app.py
 
 ### 阶段三：正式桌面壳
 
-使用 Tauri 或 Electron：
+当前实现使用 Electron：
 
-- 前端负责界面。
+- Electron 负责原生桌面窗口。
+- Python sidecar 负责解析、校验、登录和当前 HTML 工作台。
+- 桌面壳通过本机随机可用端口访问 Python 服务。
+- 用户数据保存在应用数据目录。
+
+后续正式产品化再演进为：
+
+- 前端负责更完整的桌面 UI。
 - 本地 worker 负责解析和校验。
 - SQLite 保存账号、模板和记录。
 - 文件处理全程在本地完成。

@@ -53,6 +53,49 @@ python3 -m compileall ordermind run_app.py scripts
 python3 scripts/release_check.py
 ```
 
+## 构建桌面应用
+
+当前桌面壳使用 Electron 包裹本地 Python 审单服务。应用启动后会自动选择本机端口、启动后端服务，并把用户数据保存到桌面应用数据目录中。
+
+首次准备打包环境：
+
+```bash
+cd /Users/dlj/MyPython/OrderMind
+npm install
+python3 -m venv .venv-build
+.venv-build/bin/python -m pip install pyinstaller==6.21.0
+```
+
+本机开发运行：
+
+```bash
+npm run desktop:dev
+```
+
+生成本机 Mac 测试安装包：
+
+```bash
+npm run desktop:dist:mac
+```
+
+当前默认生成 `.zip` 客户试用包。如果本机具备完整 DMG 构建环境，也可以运行：
+
+```bash
+npm run desktop:dist:mac:dmg
+```
+
+生成 Windows 安装包需要在 Windows 机器或 CI 环境执行：
+
+```bash
+npm run desktop:dist:win
+```
+
+安装包输出目录：
+
+```text
+release/installers/
+```
+
 ## 项目结构
 
 ```text
@@ -78,6 +121,9 @@ docs/
   collaboration.md
   desktop-app-plan.md
   release-and-upgrade.md
+desktop/
+  main.cjs                 Electron 桌面壳入口
+  preload.cjs              桌面窗口预加载脚本
 tests/
 ```
 

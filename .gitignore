@@ -7,12 +7,19 @@ __pycache__/
 htmlcov/
 
 .venv/
+.venv-build/
 venv/
 env/
 
 dist/
 build/
 *.egg-info/
+
+node_modules/
+npm-debug.log*
+
+release/desktop-sidecar/
+release/installers/
 
 # Local runtime data. The app recreates the default admin user on first launch.
 /data/users.json

@@ -1,0 +1,67 @@
+{
+  "name": "ordermind-desktop",
+  "version": "0.1.0",
+  "description": "OrderMind desktop shell and installer build configuration.",
+  "main": "desktop/main.cjs",
+  "private": true,
+  "scripts": {
+    "desktop:dev": "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron .",
+    "desktop:sidecar": "python3 scripts/build_desktop_sidecar.py",
+    "desktop:package": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac --dir",
+    "desktop:dist:mac": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac zip",
+    "desktop:dist:mac:dmg": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac dmg",
+    "desktop:dist:win": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --win nsis msi",
+    "desktop:dist": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac zip --win nsis msi"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.ordermind.desktop",
+    "productName": "OrderMind",
+    "artifactName": "OrderMind_${version}_${os}_${arch}.${ext}",
+    "directories": {
+      "output": "release/installers",
+      "buildResources": "desktop/resources"
+    },
+    "files": [
+      "desktop/**/*",
+      "release/desktop-sidecar/**/*",
+      "VERSION",
+      "CHANGELOG.md"
+    ],
+    "asarUnpack": [
+      "release/desktop-sidecar/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "release/desktop-sidecar",
+        "to": "desktop-sidecar"
+      },
+      {
+        "from": "templates",
+        "to": "templates"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [
+        "zip"
+      ]
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "msi"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

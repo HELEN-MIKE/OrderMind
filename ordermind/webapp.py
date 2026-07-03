@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import errno
 import html
+import json
+import os
 import secrets
+import sys
 import tempfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,7 +25,7 @@ from ordermind.templates import load_template
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ROOT / "templates"
-DATA_DIR = ROOT / "data"
+DATA_DIR = Path(os.environ.get("ORDERMIND_DATA_DIR", ROOT / "data"))
 AUTH_STORE = AuthStore(DATA_DIR / "users.json")
 SESSIONS: dict[str, str] = {}
 
@@ -39,6 +43,9 @@ class OrderMindHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         lang = _lang_from_query(parsed.query)
+        if parsed.path == "/health":
+            self._send_health()
+            return
         if parsed.path == "/login":
             self._send_html(render_login(lang=lang))
             return
@@ -161,6 +168,14 @@ class OrderMindHandler(BaseHTTPRequestHandler):
         encoded = content.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _send_health(self) -> None:
+        encoded = json.dumps({"status": "ok"}, separators=(",", ":")).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
@@ -443,10 +458,52 @@ def render_result(payload: dict[str, object], lang: str = "zh") -> str:
 def run(host: str = "127.0.0.1", port: int = 8765) -> None:
     """启动本地 Web 服务。"""
 
+    host = os.environ.get("ORDERMIND_HOST", host)
+    port = _port_from_env(port)
+    configure_runtime_from_environment()
     AUTH_STORE.ensure_default_admin()
-    server = ThreadingHTTPServer((host, port), OrderMindHandler)
+    try:
+        server = ThreadingHTTPServer((host, port), OrderMindHandler)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            print(
+                "\n".join(
+                    [
+                        f"OrderMind 启动失败：端口 {port} 已被占用。",
+                        f"如果应用已经打开，请直接访问 http://{host}:{port}",
+                        "如果要再启动一个实例，请换一个端口，例如：",
+                        f"ORDERMIND_PORT={port + 1} python3 run_app.py",
+                    ]
+                ),
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from exc
+        raise
     print(f"OrderMind 订单智脑已启动: http://{host}:{port}")
     server.serve_forever()
+
+
+def configure_runtime_from_environment() -> AuthStore:
+    """根据桌面壳传入的环境变量配置本地运行目录。"""
+
+    global AUTH_STORE, DATA_DIR
+
+    DATA_DIR = Path(os.environ.get("ORDERMIND_DATA_DIR", ROOT / "data"))
+    AUTH_STORE = AuthStore(DATA_DIR / "users.json")
+    return AUTH_STORE
+
+
+def _port_from_env(default: int) -> int:
+    value = os.environ.get("ORDERMIND_PORT")
+    if value is None:
+        return default
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise SystemExit(f"ORDERMIND_PORT 必须是数字，当前值：{value}") from exc
+    if not 1 <= port <= 65535:
+        raise SystemExit(f"ORDERMIND_PORT 必须在 1 到 65535 之间，当前值：{value}")
+    return port
 
 
 def _safe_template_path(template_name: str) -> Path:
