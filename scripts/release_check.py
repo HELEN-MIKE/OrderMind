@@ -24,9 +24,12 @@ def validate_release_readiness(root: Path) -> list[str]:
     desktop_main_path = root / "desktop" / "main.cjs"
     desktop_package_path = root / "package.json"
     desktop_sidecar_script_path = root / "scripts" / "build_desktop_sidecar.py"
+    desktop_python_launcher_path = root / "scripts" / "run_python.cjs"
+    desktop_builder_launcher_path = root / "scripts" / "run_electron_builder.cjs"
     desktop_icon_script_path = root / "scripts" / "generate_desktop_icons.py"
     mac_icon_path = root / "desktop" / "resources" / "icon.icns"
     windows_icon_path = root / "desktop" / "resources" / "icon.ico"
+    release_workflow_path = root / ".github" / "workflows" / "release-build.yml"
     sample_order_dir = root / "samples" / "customer_like_orders"
     sample_pdf_path = sample_order_dir / "text_pdf_order.pdf"
 
@@ -76,16 +79,33 @@ def validate_release_readiness(root: Path) -> list[str]:
                 errors.append("桌面打包配置缺少 templates 资源")
             if "samples" not in resource_targets:
                 errors.append("桌面打包配置缺少 samples 资源")
+            scripts = package_config.get("scripts", {})
+            sidecar_command = scripts.get("desktop:sidecar")
+            if sidecar_command != "node scripts/run_python.cjs scripts/build_desktop_sidecar.py":
+                errors.append("desktop:sidecar 必须使用跨平台 Python 启动器")
+            for script_name, command in scripts.items():
+                if isinstance(command, str) and "ELECTRON_MIRROR=" in command:
+                    errors.append(f"{script_name} 不能使用行内 ELECTRON_MIRROR 写法")
+            for script_name in ("desktop:package", "desktop:dist:mac", "desktop:dist:win"):
+                command = scripts.get(script_name, "")
+                if "node scripts/run_electron_builder.cjs" not in command:
+                    errors.append(f"{script_name} 必须使用跨平台 electron-builder 启动器")
     if not desktop_main_path.exists():
         errors.append("desktop/main.cjs 桌面壳入口缺失")
     if not desktop_sidecar_script_path.exists():
         errors.append("scripts/build_desktop_sidecar.py 桌面后端打包脚本缺失")
+    if not desktop_python_launcher_path.exists():
+        errors.append("scripts/run_python.cjs 跨平台 Python 启动器缺失")
+    if not desktop_builder_launcher_path.exists():
+        errors.append("scripts/run_electron_builder.cjs 跨平台 electron-builder 启动器缺失")
     if not desktop_icon_script_path.exists():
         errors.append("scripts/generate_desktop_icons.py 桌面图标生成脚本缺失")
     if not mac_icon_path.exists():
         errors.append("desktop/resources/icon.icns Mac 图标缺失")
     if not windows_icon_path.exists():
         errors.append("desktop/resources/icon.ico Windows 图标缺失")
+    if not release_workflow_path.exists():
+        errors.append(".github/workflows/release-build.yml Windows/macOS 安装包 CI 缺失")
     if not sample_order_dir.exists():
         errors.append("脱敏仿真订单样例目录缺失")
     if not sample_pdf_path.exists():

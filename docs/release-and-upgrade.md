@@ -41,6 +41,7 @@ release/update-manifest.example.json
 发布前必须运行：
 
 ```bash
+python3 scripts/generate_customer_like_samples.py
 python3 scripts/release_check.py
 ```
 
@@ -203,6 +204,14 @@ Windows 安装包需要在 Windows 构建环境中运行：
 npm run desktop:dist:win
 ```
 
+仓库已经提供 GitHub Actions workflow：
+
+```text
+.github/workflows/release-build.yml
+```
+
+它会在 `windows-latest` 上执行测试、发布元数据检查，并构建 Windows `.exe` / `.msi` 安装包；在 `macos-latest` 上构建 macOS `.zip`。如果没有本地 Windows 机器，先使用该 workflow 作为 Windows 安装包的第一道验证。
+
 ## 9. 当前状态
 
 当前 `0.1.0` 版本已经建立发布元数据、升级规划和 Electron 桌面壳配置。
@@ -217,16 +226,25 @@ npm run desktop:dist:win
 
 ## 10. CI 构建建议
 
-建议使用构建矩阵：
+当前 CI 构建入口：
 
 ```text
-macos-latest   -> 生成 dmg
-windows-latest -> 生成 setup.exe / msi
+workflow_dispatch -> 手动触发安装包构建
+pull_request      -> 改动发布/桌面/测试相关文件时验证
+v* tag            -> 版本标签触发安装包构建
+```
+
+构建环境：
+
+```text
+macos-latest   -> 生成 zip
+windows-latest -> 生成 exe / msi
 ```
 
 注意：
 
 - Mac 安装包需要在 macOS 环境构建。
 - Windows 安装包需要在 Windows 环境构建。
+- 桌面打包脚本必须使用 `node scripts/run_python.cjs ...` 和 `node scripts/run_electron_builder.cjs ...`，避免依赖 `python3` 或行内环境变量写法导致 Windows 构建失败。
 - 代码签名和公证会影响客户电脑能否顺利安装。
 - 早期内测可以先不签名，但客户正式试用前应规划签名。

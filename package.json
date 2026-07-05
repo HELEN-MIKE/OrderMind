@@ -5,13 +5,13 @@
   "main": "desktop/main.cjs",
   "private": true,
   "scripts": {
-    "desktop:dev": "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron .",
-    "desktop:sidecar": "python3 scripts/build_desktop_sidecar.py",
-    "desktop:package": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac --dir",
-    "desktop:dist:mac": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac zip",
-    "desktop:dist:mac:dmg": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac dmg",
-    "desktop:dist:win": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --win nsis msi",
-    "desktop:dist": "npm run desktop:sidecar && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac zip --win nsis msi"
+    "desktop:dev": "electron .",
+    "desktop:sidecar": "node scripts/run_python.cjs scripts/build_desktop_sidecar.py",
+    "desktop:package": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac --dir",
+    "desktop:dist:mac": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac zip",
+    "desktop:dist:mac:dmg": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac dmg",
+    "desktop:dist:win": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --win nsis msi",
+    "desktop:dist": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac zip --win nsis msi"
   },
   "devDependencies": {
     "electron": "^43.0.0",
