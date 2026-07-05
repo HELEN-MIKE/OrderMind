@@ -38,6 +38,22 @@ SAMPLE_ORDER_DESCRIPTIONS = {
     "text_pdf_order.pdf": "文本型 PDF 订单",
     "review_findings_bad_amount_missing_material.txt": "故意带问题样例",
 }
+SUPPORTED_UPLOAD_SUFFIXES = {
+    ".txt",
+    ".csv",
+    ".tsv",
+    ".xlsx",
+    ".xlsm",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
+}
+UPLOAD_ACCEPT = ",".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
 
 
 class OrderMindHandler(BaseHTTPRequestHandler):
@@ -305,10 +321,9 @@ def sample_order_options() -> list[dict[str, str]]:
     只暴露白名单扩展名和内置说明，避免把 README 或临时文件显示给客户。
     """
 
-    allowed_suffixes = {".txt", ".csv", ".tsv", ".xlsx", ".xlsm", ".pdf"}
     options: list[dict[str, str]] = []
     for path in sorted(SAMPLE_ORDER_DIR.glob("*")):
-        if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_UPLOAD_SUFFIXES:
             continue
         options.append(
             {
@@ -456,7 +471,7 @@ def render_home(lang: str = "zh", error: str = "") -> str:
         <input type="hidden" name="lang" value="{html.escape(lang)}">
         <label>
           <span>{html.escape(t(lang, "order_file"))}</span>
-          <input type="file" name="order_file" accept=".txt,.csv,.tsv,.xlsx,.xlsm,.pdf" required>
+          <input type="file" name="order_file" accept="{html.escape(UPLOAD_ACCEPT)}" required>
         </label>
         <label>
           <span>{html.escape(t(lang, "rule_template"))}</span>

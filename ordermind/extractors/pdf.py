@@ -1,8 +1,8 @@
 """轻量文本型 PDF 订单解析器。
 
-本模块只覆盖“可复制文字”的电子 PDF。它从 PDF 内容流中提取基础文本操作符，
-再复用现有文本订单解析器完成字段抽取。扫描件 PDF、图片 OCR、复杂表格恢复
-属于后续文档智能阶段，不能在这里假装已经支持。
+本模块优先覆盖“可复制文字”的电子 PDF。它从 PDF 内容流中提取基础文本操作符，
+再复用现有文本订单解析器完成字段抽取。若 PDF 没有可复制文本，会回退到可选
+OCR 命令；复杂表格恢复仍属于后续文档智能阶段。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import re
 import zlib
 from pathlib import Path
 
+from ordermind.extractors.ocr import parse_ocr_order
 from ordermind.extractors.text import parse_text_order
 from ordermind.models import OrderRecord
 
@@ -19,11 +20,14 @@ STREAM_RE = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
 TEXT_OBJECT_RE = re.compile(rb"BT(.*?)ET", re.DOTALL)
 
 
-def parse_pdf_order(path: str | Path) -> OrderRecord:
+def parse_pdf_order(path: str | Path, ocr_command: str | None = None) -> OrderRecord:
     """解析文本型 PDF 订单文件。"""
 
     file_path = Path(path)
-    text = extract_pdf_text(file_path)
+    try:
+        text = extract_pdf_text(file_path)
+    except ValueError:
+        return parse_ocr_order(file_path, ocr_command=ocr_command)
     return parse_text_order(text, source_name=file_path.name)
 
 

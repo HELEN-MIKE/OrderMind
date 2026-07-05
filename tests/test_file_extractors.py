@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ordermind.extractors.dispatcher import parse_order_file
+from ordermind.extractors.ocr import OcrUnavailableError
 
 
 class FileExtractorsTest(unittest.TestCase):
@@ -36,6 +37,44 @@ class FileExtractorsTest(unittest.TestCase):
         self.assertEqual(record.lines[1].quantity, Decimal("80"))
         self.assertEqual(record.total_amount, Decimal("1738.00"))
         self.assertEqual(record.payment_terms, "T/T 30% deposit, balance before shipment")
+
+    def test_parse_image_order_uses_optional_ocr_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "scan.png"
+            image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+            ocr_command = _write_fake_ocr_command(Path(tmpdir))
+
+            record = parse_order_file(image_path, ocr_command=str(ocr_command))
+
+        self.assertEqual(record.source_name, "scan.png")
+        self.assertEqual(len(record.lines), 1)
+        self.assertEqual(record.lines[0].item_no, "OM-9001")
+        self.assertEqual(record.lines[0].product_name, "OCR Cup")
+        self.assertEqual(record.total_amount, Decimal("25.00"))
+
+    def test_parse_scanned_pdf_falls_back_to_optional_ocr_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "scanned.pdf"
+            _write_image_only_pdf(pdf_path)
+            ocr_command = _write_fake_ocr_command(Path(tmpdir))
+
+            record = parse_order_file(pdf_path, ocr_command=str(ocr_command))
+
+        self.assertEqual(record.source_name, "scanned.pdf")
+        self.assertEqual(len(record.lines), 1)
+        self.assertEqual(record.lines[0].item_no, "OM-9001")
+        self.assertEqual(record.total_amount, Decimal("25.00"))
+
+    def test_parse_image_order_reports_when_ocr_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "scan.jpg"
+            image_path.write_bytes(b"not a real jpeg")
+
+            with self.assertRaises(OcrUnavailableError) as context:
+                parse_order_file(image_path, ocr_command="missing-ordermind-ocr")
+
+        self.assertIn("OCR", str(context.exception))
+        self.assertIn("missing-ordermind-ocr", str(context.exception))
 
 
 def _write_minimal_xlsx(path: Path) -> None:
@@ -158,6 +197,52 @@ def _write_minimal_text_pdf(path: Path) -> None:
         ).encode("latin-1")
     )
     path.write_bytes(bytes(content))
+
+
+def _write_image_only_pdf(path: Path) -> None:
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R >>",
+        b"<< /Length 0 >>\nstream\n\nendstream",
+    ]
+    content = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(content))
+        content.extend(f"{index} 0 obj\n".encode("latin-1"))
+        content.extend(obj)
+        content.extend(b"\nendobj\n")
+    xref_offset = len(content)
+    content.extend(f"xref\n0 {len(objects) + 1}\n".encode("latin-1"))
+    content.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        content.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
+    content.extend(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n"
+        ).encode("latin-1")
+    )
+    path.write_bytes(bytes(content))
+
+
+def _write_fake_ocr_command(directory: Path) -> Path:
+    command = directory / "fake_ocr.py"
+    command.write_text(
+        """#!/usr/bin/env python3
+import sys
+
+sys.stdout.write(\"\"\"Simulated OCR Order
+Item No,Description,Qty,Unit Price,Amount,Material,Unit,Delivery Date
+OM-9001,OCR Cup,10,2.50,25.00,glass,PCS,2026-11-01
+Grand Total: 25.00
+\"\"\")
+""",
+        encoding="utf-8",
+    )
+    command.chmod(0o755)
+    return command
 
 
 def _pdf_escape(value: str) -> str:

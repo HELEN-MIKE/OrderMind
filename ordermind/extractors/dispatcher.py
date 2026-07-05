@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ordermind.extractors.ocr import IMAGE_SUFFIXES, parse_ocr_order
 from ordermind.extractors.pdf import parse_pdf_order
 from ordermind.extractors.text import parse_text_order
 from ordermind.extractors.xlsx import parse_xlsx_order
 from ordermind.models import OrderRecord
 
 
-def parse_order_file(path: str | Path) -> OrderRecord:
+def parse_order_file(path: str | Path, ocr_command: str | None = None) -> OrderRecord:
     """解析订单文件，并返回统一的 OrderRecord。"""
 
     file_path = Path(path)
@@ -24,7 +25,9 @@ def parse_order_file(path: str | Path) -> OrderRecord:
     if suffix in {".xlsx", ".xlsm"}:
         return parse_xlsx_order(file_path)
     if suffix == ".pdf":
-        return parse_pdf_order(file_path)
+        return parse_pdf_order(file_path, ocr_command=ocr_command)
+    if suffix in IMAGE_SUFFIXES:
+        return parse_ocr_order(file_path, ocr_command=ocr_command)
     raise ValueError(f"暂不支持的文件格式: {suffix}")
 
 

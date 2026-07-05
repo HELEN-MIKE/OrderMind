@@ -21,6 +21,7 @@ class ReleaseMetadataTest(unittest.TestCase):
         self.assertIn("platforms", manifest)
         self.assertIn("darwin-aarch64", manifest["platforms"])
         self.assertIn("windows-x86_64", manifest["platforms"])
+        self.assertTrue((root / "ordermind" / "extractors" / "ocr.py").exists())
 
 
 if __name__ == "__main__":

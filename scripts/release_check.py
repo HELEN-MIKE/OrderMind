@@ -30,6 +30,7 @@ def validate_release_readiness(root: Path) -> list[str]:
     mac_icon_path = root / "desktop" / "resources" / "icon.icns"
     windows_icon_path = root / "desktop" / "resources" / "icon.ico"
     release_workflow_path = root / ".github" / "workflows" / "release-build.yml"
+    ocr_extractor_path = root / "ordermind" / "extractors" / "ocr.py"
     sample_order_dir = root / "samples" / "customer_like_orders"
     sample_pdf_path = sample_order_dir / "text_pdf_order.pdf"
 
@@ -106,6 +107,8 @@ def validate_release_readiness(root: Path) -> list[str]:
         errors.append("desktop/resources/icon.ico Windows 图标缺失")
     if not release_workflow_path.exists():
         errors.append(".github/workflows/release-build.yml Windows/macOS 安装包 CI 缺失")
+    if not ocr_extractor_path.exists():
+        errors.append("ordermind/extractors/ocr.py OCR 解析器缺失")
     if not sample_order_dir.exists():
         errors.append("脱敏仿真订单样例目录缺失")
     if not sample_pdf_path.exists():

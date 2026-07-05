@@ -26,6 +26,10 @@ class I18nWebappTest(unittest.TestCase):
         self.assertIn('action="/analyze-sample"', chinese)
         self.assertIn("脱敏示例订单", chinese)
         self.assertIn("Sanitized Sample Orders", english)
+        self.assertIn(".png", chinese)
+        self.assertIn(".jpg", chinese)
+        self.assertIn("图片 OCR", chinese)
+        self.assertIn("image OCR", english)
 
     def test_sample_order_options_only_expose_curated_examples(self):
         options = sample_order_options()

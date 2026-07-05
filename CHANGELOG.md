@@ -19,6 +19,8 @@
 - Sanitized customer-like sample orders for Chinese, English, Excel, and text-based PDF demos.
 - One-click sample order review entries on the home page.
 - Text-based PDF order parsing for PDFs that contain copyable text.
+- Optional OCR fallback for scanned PDFs and image orders through a local OCR command.
+- GitHub Actions installer build workflow for macOS and Windows packaging validation.
 - Customer demo guide for running normal samples, issue samples, and report export.
 - Release metadata and upgrade planning documents.
 
@@ -27,5 +29,5 @@
 - Installable Mac and Windows packages are required for every customer trial release.
 - A local Mac arm64 zip package can be produced with `npm run desktop:dist:mac`.
 - Current Mac package output: `release/installers/OrderMind_0.1.0_mac_arm64.zip`.
-- Windows packaging remains pending validation on a Windows machine or CI runner.
+- Windows packaging now has a CI build workflow, and still needs a successful Windows runner trial before customer distribution.
 - macOS Developer ID signing and notarization remain pending until a signing certificate is available.

@@ -14,6 +14,8 @@
 - 回滚说明。
 - 发布前测试记录。
 
+扫描件 PDF 和图片订单属于可选 OCR 能力：安装包不强制内置 OCR 引擎，客户电脑可安装 Tesseract，或通过 `ORDERMIND_OCR_COMMAND` 指向自定义 OCR 命令。
+
 ## 2. 版本号规则
 
 使用语义化版本：
@@ -212,6 +214,20 @@ npm run desktop:dist:win
 
 它会在 `windows-latest` 上执行测试、发布元数据检查，并构建 Windows `.exe` / `.msi` 安装包；在 `macos-latest` 上构建 macOS `.zip`。如果没有本地 Windows 机器，先使用该 workflow 作为 Windows 安装包的第一道验证。
 
+OCR 验收建议额外准备一张扫描件或图片订单，并确保本机存在:
+
+```bash
+tesseract
+```
+
+或设置:
+
+```bash
+ORDERMIND_OCR_COMMAND=/path/to/ocr-command
+```
+
+OCR 命令需要把识别文本写到标准输出，OrderMind 再按普通文本订单进行字段抽取和规则校验。
+
 ## 9. 当前状态
 
 当前 `0.1.0` 版本已经建立发布元数据、升级规划和 Electron 桌面壳配置。
@@ -220,6 +236,7 @@ npm run desktop:dist:win
 
 - 在 macOS 上生成并验收 `.zip`，具备签名和 DMG 构建条件后再生成 `.dmg`。
 - 在 Windows 或 CI 上生成并验收 `.exe` / `.msi`。
+- 准备真实扫描件或图片订单样例，验证本机 OCR 命令的识别质量。
 - 规划代码签名、公证和自动更新。
 - 后续评估是否迁移到 Tauri updater。
 - 增加 GitHub Actions 或其他 CI，同时在 macOS 和 Windows 上构建安装包。

@@ -21,7 +21,7 @@ def main() -> int:
     """解析命令行参数，执行一次订单解析和校验。"""
 
     parser = argparse.ArgumentParser(description="OrderMind 订单智脑离线审单工具")
-    parser.add_argument("file", help="待解析订单文件，当前支持 .txt/.csv/.tsv/.xlsx/.xlsm")
+    parser.add_argument("file", help="待解析订单文件，支持 .txt/.csv/.tsv/.xlsx/.xlsm/.pdf/图片 OCR")
     parser.add_argument(
         "--template",
         default="templates/default_order_rules.json",
