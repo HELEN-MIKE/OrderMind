@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, Menu, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const http = require("http");
@@ -13,6 +13,7 @@ const DEFAULT_DEV_PORT = 8765;
 async function createWindow() {
   const port = await findAvailablePort(DEFAULT_DEV_PORT);
   await startBackend(port);
+  configureApplicationMenu();
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -20,6 +21,7 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 680,
     title: "OrderMind 订单智脑",
+    icon: path.join(__dirname, "resources", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -36,6 +38,40 @@ async function createWindow() {
   });
 }
 
+function configureApplicationMenu() {
+  const template = [
+    {
+      label: "OrderMind",
+      submenu: [
+        { role: "about", label: "关于 OrderMind" },
+        { type: "separator" },
+        { role: "quit", label: "退出 OrderMind" }
+      ]
+    },
+    {
+      label: "视图",
+      submenu: [
+        { role: "reload", label: "刷新" },
+        { role: "forceReload", label: "强制刷新" },
+        { type: "separator" },
+        { role: "resetZoom", label: "实际大小" },
+        { role: "zoomIn", label: "放大" },
+        { role: "zoomOut", label: "缩小" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "切换全屏" }
+      ]
+    },
+    {
+      label: "窗口",
+      submenu: [
+        { role: "minimize", label: "最小化" },
+        { role: "close", label: "关闭窗口" }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function startBackend(port) {
   const backend = resolveBackendExecutable();
   const dataDir = app.getPath("userData");
@@ -47,7 +83,8 @@ async function startBackend(port) {
       ...process.env,
       ORDERMIND_HOST: "127.0.0.1",
       ORDERMIND_PORT: String(port),
-      ORDERMIND_DATA_DIR: path.join(dataDir, "data")
+      ORDERMIND_DATA_DIR: path.join(dataDir, "data"),
+      ORDERMIND_RESOURCE_DIR: backend.cwd
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true

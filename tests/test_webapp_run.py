@@ -69,6 +69,40 @@ class WebappRunTest(unittest.TestCase):
         self.assertEqual(webapp.DATA_DIR, Path(tmpdir))
         self.assertEqual(auth_store.path, Path(tmpdir) / "users.json")
 
+    def test_configure_runtime_uses_desktop_resource_directory_from_environment(self):
+        with TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {"ORDERMIND_RESOURCE_DIR": tmpdir},
+            clear=False,
+        ):
+            webapp.configure_runtime_from_environment()
+
+        self.assertEqual(webapp.RESOURCE_DIR, Path(tmpdir))
+        self.assertEqual(webapp.TEMPLATE_DIR, Path(tmpdir) / "templates")
+        self.assertEqual(webapp.SAMPLE_ORDER_DIR, Path(tmpdir) / "samples" / "customer_like_orders")
+
+        with patch.dict(os.environ, {}, clear=True):
+            webapp.configure_runtime_from_environment()
+
+    def test_download_filename_is_safe_and_html_extension(self):
+        self.assertEqual(
+            webapp._download_filename("客户订单 2026/07/03.xlsx"),
+            "客户订单_2026_07_03-report.html",
+        )
+        self.assertEqual(
+            webapp._download_filename("../bad:name?.txt"),
+            "bad_name-report.html",
+        )
+
+    def test_safe_sample_path_rejects_unknown_or_nested_names(self):
+        with self.assertRaises(ValueError):
+            webapp._safe_sample_path("../sample_order.txt")
+        with self.assertRaises(ValueError):
+            webapp._safe_sample_path("README.md")
+
+        sample_path = webapp._safe_sample_path("domestic_purchase_order_zh.txt")
+        self.assertEqual(sample_path.name, "domestic_purchase_order_zh.txt")
+
 
 if __name__ == "__main__":
     unittest.main()

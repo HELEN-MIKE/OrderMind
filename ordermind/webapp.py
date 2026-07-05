@@ -19,15 +19,25 @@ from ordermind.auth import (
 )
 from ordermind.extractors.dispatcher import parse_order_file
 from ordermind.i18n import normalize_language, t
-from ordermind.reporting import build_result_payload, payload_to_json
+from ordermind.reporting import build_result_payload, payload_to_json, payload_to_xlsx
 from ordermind.rules import validate_order
 from ordermind.templates import load_template
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_DIR = ROOT / "templates"
+RESOURCE_DIR = Path(os.environ.get("ORDERMIND_RESOURCE_DIR", ROOT))
+TEMPLATE_DIR = RESOURCE_DIR / "templates"
+SAMPLE_ORDER_DIR = RESOURCE_DIR / "samples" / "customer_like_orders"
 DATA_DIR = Path(os.environ.get("ORDERMIND_DATA_DIR", ROOT / "data"))
 AUTH_STORE = AuthStore(DATA_DIR / "users.json")
 SESSIONS: dict[str, str] = {}
+SAMPLE_ORDER_DESCRIPTIONS = {
+    "domestic_purchase_order_zh.txt": "中文采购订单",
+    "commercial_invoice_en.csv": "英文商业发票",
+    "proforma_invoice_en.tsv": "英文形式发票",
+    "multi_currency_order.xlsx": "Excel 多币种订单",
+    "text_pdf_order.pdf": "文本型 PDF 订单",
+    "review_findings_bad_amount_missing_material.txt": "故意带问题样例",
+}
 
 
 class OrderMindHandler(BaseHTTPRequestHandler):
@@ -71,6 +81,12 @@ class OrderMindHandler(BaseHTTPRequestHandler):
         if parsed.path == "/change-password":
             self._handle_change_password()
             return
+        if parsed.path == "/export-report":
+            self._handle_export_report()
+            return
+        if parsed.path == "/analyze-sample":
+            self._handle_analyze_sample()
+            return
         if parsed.path != "/analyze":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -92,6 +108,25 @@ class OrderMindHandler(BaseHTTPRequestHandler):
             self._send_html(render_result(payload, lang=lang))
         except Exception as exc:  # noqa: BLE001 - show local user actionable error
             self._send_html(render_home(error=str(exc)), HTTPStatus.BAD_REQUEST)
+
+    def _handle_analyze_sample(self) -> None:
+        """读取内置脱敏样例并复用正常审单流程。"""
+
+        if not self._current_username():
+            self._redirect("/login")
+            return
+        form = self._parse_urlencoded()
+        lang = normalize_language(form.get("lang", "zh"))
+        sample_name = form.get("sample_name", "")
+        template_name = form.get("template_name", "default_order_rules.json")
+        try:
+            sample_path = _safe_sample_path(sample_name)
+            upload = UploadedFile(filename=sample_path.name, content=sample_path.read_bytes())
+            payload = analyze_upload(upload, template_name)
+        except Exception as exc:  # noqa: BLE001 - local user needs actionable feedback
+            self._send_html(render_home(lang=lang, error=str(exc)), HTTPStatus.BAD_REQUEST)
+            return
+        self._send_html(render_result(payload, lang=lang))
 
     def _handle_login(self) -> None:
         form = self._parse_urlencoded()
@@ -125,6 +160,32 @@ class OrderMindHandler(BaseHTTPRequestHandler):
             )
             return
         self._send_html(render_login(lang=lang, notice=t(lang, "password_changed")))
+
+    def _handle_export_report(self) -> None:
+        """把结果页中的结构化 payload 转成可下载的 HTML 报告。"""
+
+        if not self._current_username():
+            self._redirect("/login")
+            return
+        form = self._parse_urlencoded()
+        lang = normalize_language(form.get("lang", "zh"))
+        export_format = form.get("format", "html")
+        try:
+            payload = json.loads(form.get("payload_json", "{}"))
+        except (TypeError, json.JSONDecodeError, KeyError) as exc:
+            self._send_html(render_home(lang=lang, error=str(exc)), HTTPStatus.BAD_REQUEST)
+            return
+        source_name = str(payload.get("record", {}).get("source_name") or "ordermind-report")
+        if export_format == "xlsx":
+            workbook = payload_to_xlsx(payload, lang=lang)
+            self._send_download(
+                workbook,
+                _download_filename(source_name, extension=".xlsx"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            return
+        report_html = render_export_report(payload, lang=lang)
+        self._send_download(report_html, _download_filename(source_name, extension=".html"), "text/html; charset=utf-8")
 
     def _parse_multipart(self) -> dict[str, object]:
         """解析 multipart/form-data。
@@ -180,6 +241,15 @@ class OrderMindHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _send_download(self, content: str | bytes, filename: str, content_type: str) -> None:
+        encoded = content if isinstance(content, bytes) else content.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
     def _redirect(self, location: str, cookie: str = "") -> None:
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
@@ -227,6 +297,26 @@ def analyze_upload(upload: UploadedFile, template_name: str) -> dict[str, object
     template = load_template(template_path)
     report = validate_order(record, template)
     return build_result_payload(record, report)
+
+
+def sample_order_options() -> list[dict[str, str]]:
+    """返回首页可展示的脱敏样例清单。
+
+    只暴露白名单扩展名和内置说明，避免把 README 或临时文件显示给客户。
+    """
+
+    allowed_suffixes = {".txt", ".csv", ".tsv", ".xlsx", ".xlsm", ".pdf"}
+    options: list[dict[str, str]] = []
+    for path in sorted(SAMPLE_ORDER_DIR.glob("*")):
+        if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
+            continue
+        options.append(
+            {
+                "filename": path.name,
+                "label": SAMPLE_ORDER_DESCRIPTIONS.get(path.name, path.stem),
+            }
+        )
+    return options
 
 
 def render_login(lang: str = "zh", error: str = "", notice: str = "") -> str:
@@ -327,6 +417,18 @@ def render_home(lang: str = "zh", error: str = "") -> str:
         </li>"""
         for index in range(1, 5)
     )
+    sample_buttons = "\n".join(
+        f"""<form method="post" action="/analyze-sample" class="sample-card">
+          <input type="hidden" name="lang" value="{html.escape(lang)}">
+          <input type="hidden" name="template_name" value="default_order_rules.json">
+          <input type="hidden" name="sample_name" value="{html.escape(option['filename'])}">
+          <button type="submit">
+            <strong>{html.escape(option['label'])}</strong>
+            <span>{html.escape(option['filename'])}</span>
+          </button>
+        </form>"""
+        for option in sample_order_options()
+    )
     return f"""<!doctype html>
 <html lang="{_html_lang(lang)}">
 <head>
@@ -354,7 +456,7 @@ def render_home(lang: str = "zh", error: str = "") -> str:
         <input type="hidden" name="lang" value="{html.escape(lang)}">
         <label>
           <span>{html.escape(t(lang, "order_file"))}</span>
-          <input type="file" name="order_file" accept=".txt,.csv,.tsv,.xlsx,.xlsm" required>
+          <input type="file" name="order_file" accept=".txt,.csv,.tsv,.xlsx,.xlsm,.pdf" required>
         </label>
         <label>
           <span>{html.escape(t(lang, "rule_template"))}</span>
@@ -362,6 +464,15 @@ def render_home(lang: str = "zh", error: str = "") -> str:
         </label>
         <button type="submit">{html.escape(t(lang, "start_review"))}</button>
       </form>
+    </section>
+    <section class="panel sample-panel">
+      <div class="section-head">
+        <div>
+          <h2>{html.escape(t(lang, "sample_orders"))}</h2>
+          <p class="hint">{html.escape(t(lang, "sample_orders_hint"))}</p>
+        </div>
+      </div>
+      <div class="sample-grid">{sample_buttons}</div>
     </section>
     <section class="panel guide-panel">
       <h2>{html.escape(t(lang, "first_time_guide"))}</h2>
@@ -404,8 +515,9 @@ def render_result(payload: dict[str, object], lang: str = "zh") -> str:
         f"<td>{html.escape(issue['message'])}</td>"
         "</tr>"
         for issue in issues
-    ) or "<tr><td colspan='3'>未发现错误或警告。</td></tr>"
+    ) or f"<tr><td colspan='3'>{html.escape(t(lang, 'no_issues'))}</td></tr>"
     json_payload = html.escape(payload_to_json(payload))
+    export_payload = html.escape(payload_to_json(payload), quote=True)
     return f"""<!doctype html>
 <html lang="{_html_lang(lang)}">
 <head>
@@ -421,7 +533,99 @@ def render_result(payload: dict[str, object], lang: str = "zh") -> str:
         <p class="eyebrow">{html.escape(t(lang, "result_title"))}</p>
         <h1>{html.escape(record['source_name'])}</h1>
       </div>
-      <a class="link-button" href="/?lang={html.escape(lang)}">{html.escape(t(lang, "upload_again"))}</a>
+      <div class="top-actions">
+        <form method="post" action="/export-report" class="inline-form">
+          <input type="hidden" name="lang" value="{html.escape(lang)}">
+          <input type="hidden" name="format" value="html">
+          <input type="hidden" name="payload_json" value="{export_payload}">
+          <button type="submit" class="link-button action-button">{html.escape(t(lang, "export_report"))}</button>
+        </form>
+        <form method="post" action="/export-report" class="inline-form">
+          <input type="hidden" name="lang" value="{html.escape(lang)}">
+          <input type="hidden" name="format" value="xlsx">
+          <input type="hidden" name="payload_json" value="{export_payload}">
+          <button type="submit" class="link-button action-button">{html.escape(t(lang, "export_excel"))}</button>
+        </form>
+        <a class="link-button" href="/?lang={html.escape(lang)}">{html.escape(t(lang, "upload_again"))}</a>
+      </div>
+    </section>
+    <section class="grid">
+      <div class="metric"><strong>{summary['line_count']}</strong><span>{html.escape(t(lang, "line_count"))}</span></div>
+      <div class="metric danger"><strong>{summary['error_count']}</strong><span>{html.escape(t(lang, "errors"))}</span></div>
+      <div class="metric warn"><strong>{summary['warning_count']}</strong><span>{html.escape(t(lang, "warnings"))}</span></div>
+    </section>
+    <section class="panel">
+      <h2>{html.escape(t(lang, "order_lines"))}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>{html.escape(t(lang, "item_no"))}</th><th>{html.escape(t(lang, "product_name"))}</th><th>{html.escape(t(lang, "quantity"))}</th><th>{html.escape(t(lang, "unit_price"))}</th><th>{html.escape(t(lang, "subtotal"))}</th><th>{html.escape(t(lang, "material"))}</th></tr></thead>
+          <tbody>{line_rows}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>{html.escape(t(lang, "issues"))}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>{html.escape(t(lang, "severity"))}</th><th>{html.escape(t(lang, "location"))}</th><th>{html.escape(t(lang, "issue"))}</th></tr></thead>
+          <tbody>{issue_rows}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>{html.escape(t(lang, "structured_json"))}</h2>
+      <pre>{json_payload}</pre>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+def render_export_report(payload: dict[str, object], lang: str = "zh") -> str:
+    """渲染可保存到本地的独立 HTML 审单报告。"""
+
+    lang = normalize_language(lang)
+    record = payload["record"]
+    report = payload["report"]
+    summary = payload["summary"]
+    lines = record.get("lines", [])
+    issues = report.get("errors", []) + report.get("warnings", []) + report.get("infos", [])
+    line_rows = "\n".join(
+        "<tr>"
+        f"<td>{html.escape(line.get('item_no') or '')}</td>"
+        f"<td>{html.escape(line.get('product_name') or '')}</td>"
+        f"<td>{html.escape(line.get('quantity') or '')}</td>"
+        f"<td>{html.escape(line.get('unit_price') or '')}</td>"
+        f"<td>{html.escape(line.get('subtotal') or '')}</td>"
+        f"<td>{html.escape(line.get('material') or '')}</td>"
+        "</tr>"
+        for line in lines
+    )
+    issue_rows = "\n".join(
+        "<tr>"
+        f"<td>{html.escape(issue.get('severity') or '')}</td>"
+        f"<td>{html.escape(issue.get('location') or '')}</td>"
+        f"<td>{html.escape(issue.get('message') or '')}</td>"
+        "</tr>"
+        for issue in issues
+    ) or f"<tr><td colspan='3'>{html.escape(t(lang, 'no_issues'))}</td></tr>"
+    json_payload = html.escape(payload_to_json(payload))
+    return f"""<!doctype html>
+<html lang="{_html_lang(lang)}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(t(lang, "report_title"))}</title>
+  <style>{STYLE}</style>
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">{html.escape(t(lang, "app_title"))}</p>
+        <h1>{html.escape(t(lang, "report_title"))}</h1>
+        <p class="hint">{html.escape(record.get('source_name') or '')}</p>
+      </div>
     </section>
     <section class="grid">
       <div class="metric"><strong>{summary['line_count']}</strong><span>{html.escape(t(lang, "line_count"))}</span></div>
@@ -486,8 +690,11 @@ def run(host: str = "127.0.0.1", port: int = 8765) -> None:
 def configure_runtime_from_environment() -> AuthStore:
     """根据桌面壳传入的环境变量配置本地运行目录。"""
 
-    global AUTH_STORE, DATA_DIR
+    global AUTH_STORE, DATA_DIR, RESOURCE_DIR, TEMPLATE_DIR, SAMPLE_ORDER_DIR
 
+    RESOURCE_DIR = Path(os.environ.get("ORDERMIND_RESOURCE_DIR", ROOT))
+    TEMPLATE_DIR = RESOURCE_DIR / "templates"
+    SAMPLE_ORDER_DIR = RESOURCE_DIR / "samples" / "customer_like_orders"
     DATA_DIR = Path(os.environ.get("ORDERMIND_DATA_DIR", ROOT / "data"))
     AUTH_STORE = AuthStore(DATA_DIR / "users.json")
     return AUTH_STORE
@@ -512,6 +719,18 @@ def _safe_template_path(template_name: str) -> Path:
     path = TEMPLATE_DIR / Path(template_name).name
     if not path.exists():
         raise ValueError(f"规则模板不存在: {template_name}")
+    return path
+
+
+def _safe_sample_path(sample_name: str) -> Path:
+    """只允许读取内置脱敏样例目录中的订单文件。"""
+
+    if Path(sample_name).name != sample_name:
+        raise ValueError(f"示例订单不存在: {sample_name}")
+    path = SAMPLE_ORDER_DIR / sample_name
+    allowed_names = {option["filename"] for option in sample_order_options()}
+    if sample_name not in allowed_names or not path.exists():
+        raise ValueError(f"示例订单不存在: {sample_name}")
     return path
 
 
@@ -547,6 +766,16 @@ def _parse_cookie_header(cookie_header: str) -> dict[str, str]:
 
 def _html_lang(lang: str) -> str:
     return "zh-CN" if normalize_language(lang) == "zh" else "en"
+
+
+def _download_filename(source_name: str, extension: str = ".html") -> str:
+    """把订单来源名转换为适合浏览器下载的报告文件名。"""
+
+    normalized = source_name.replace("\\", "_").replace("/", "_")
+    stem = Path(normalized).stem or "ordermind-report"
+    safe = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in stem)
+    safe = safe.strip("_") or "ordermind-report"
+    return f"{safe}-report{extension}"
 
 
 STYLE = """
@@ -621,12 +850,61 @@ h2 { margin: 0 0 16px; font-size: 20px; }
   text-decoration: none;
   white-space: nowrap;
 }
+.inline-form { margin: 0; }
+.action-button {
+  min-height: auto;
+  width: auto;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 20px;
   margin: 16px 0;
+}
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.sample-panel .hint { margin-top: 6px; }
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+.sample-card { margin: 0; }
+.sample-card button {
+  width: 100%;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  background: #f8fafb;
+  color: var(--ink);
+  border-color: var(--line);
+  text-align: left;
+}
+.sample-card button:hover {
+  border-color: var(--accent);
+  background: #f0fdfa;
+}
+.sample-card strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.sample-card span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 .guide-panel {
   background: #fbfcfd;
@@ -749,5 +1027,9 @@ pre {
   .topbar, .upload-form, .top-actions { display: block; }
   .status, .link-button, input, select, button { margin-top: 12px; }
   .grid, .guide-list { grid-template-columns: 1fr; }
+  .sample-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .sample-grid { grid-template-columns: 1fr; }
 }
 """

@@ -22,6 +22,21 @@ class FileExtractorsTest(unittest.TestCase):
         self.assertEqual(record.lines[1].quantity, Decimal("50"))
         self.assertEqual(record.total_amount, Decimal("400.00"))
 
+    def test_parse_text_pdf_order_extracts_lines_from_content_stream(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "order.pdf"
+            _write_minimal_text_pdf(path)
+
+            record = parse_order_file(path)
+
+        self.assertEqual(record.source_name, "order.pdf")
+        self.assertEqual(len(record.lines), 2)
+        self.assertEqual(record.lines[0].item_no, "OM-8001")
+        self.assertEqual(record.lines[0].product_name, "Steel Lunch Box")
+        self.assertEqual(record.lines[1].quantity, Decimal("80"))
+        self.assertEqual(record.total_amount, Decimal("1738.00"))
+        self.assertEqual(record.payment_terms, "T/T 30% deposit, balance before shipment")
+
 
 def _write_minimal_xlsx(path: Path) -> None:
     files = {
@@ -94,6 +109,59 @@ def _write_minimal_xlsx(path: Path) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for name, content in files.items():
             archive.writestr(name, content)
+
+
+def _write_minimal_text_pdf(path: Path) -> None:
+    lines = [
+        "Sanitized Simulation PDF Order",
+        "Payment Terms: T/T 30% deposit, balance before shipment",
+        "Packaging: 20 PCS per export carton",
+        "Delivery Date: 2026-10-18",
+        "Item No,Description,Qty,Unit Price,Amount,Material,Unit,Delivery Date",
+        "OM-8001,Steel Lunch Box,120,9.15,1098.00,stainless steel,PCS,2026-10-18",
+        "OM-8002,Silicone Seal Ring,80,8.00,640.00,food grade silicone,PCS,2026-10-20",
+        "Total Qty: 200",
+        "Grand Total: 1738.00",
+    ]
+    stream = "BT\n/F1 10 Tf\n72 760 Td\n"
+    for index, line in enumerate(lines):
+        if index:
+            stream += "T*\n"
+        stream += f"({_pdf_escape(line)}) Tj\n"
+    stream += "ET\n"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        (
+            f"<< /Length {len(stream.encode('latin-1'))} >>\nstream\n"
+            f"{stream}endstream"
+        ).encode("latin-1"),
+    ]
+    content = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(content))
+        content.extend(f"{index} 0 obj\n".encode("latin-1"))
+        content.extend(obj)
+        content.extend(b"\nendobj\n")
+    xref_offset = len(content)
+    content.extend(f"xref\n0 {len(objects) + 1}\n".encode("latin-1"))
+    content.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        content.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
+    content.extend(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n"
+        ).encode("latin-1")
+    )
+    path.write_bytes(bytes(content))
+
+
+def _pdf_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 if __name__ == "__main__":

@@ -12,10 +12,20 @@
 - First sign-in password change flow.
 - First-time use guide.
 - Sample TXT and XLSX orders.
+- Electron desktop shell with a packaged local Python backend.
+- Mac zip package build for local customer trials.
+- Desktop application icon resources for macOS and Windows packaging.
+- Local HTML and Excel review report export from the result page.
+- Sanitized customer-like sample orders for Chinese, English, Excel, and text-based PDF demos.
+- One-click sample order review entries on the home page.
+- Text-based PDF order parsing for PDFs that contain copyable text.
+- Customer demo guide for running normal samples, issue samples, and report export.
 - Release metadata and upgrade planning documents.
 
 ### Packaging Status
 
 - Installable Mac and Windows packages are required for every customer trial release.
-- The current codebase contains the release policy and metadata scaffold.
-- The first actual `.dmg` / `.msi` or `.exe` installer should be produced after the desktop shell is added.
+- A local Mac arm64 zip package can be produced with `npm run desktop:dist:mac`.
+- Current Mac package output: `release/installers/OrderMind_0.1.0_mac_arm64.zip`.
+- Windows packaging remains pending validation on a Windows machine or CI runner.
+- macOS Developer ID signing and notarization remain pending until a signing certificate is available.

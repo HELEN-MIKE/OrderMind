@@ -24,6 +24,11 @@ def validate_release_readiness(root: Path) -> list[str]:
     desktop_main_path = root / "desktop" / "main.cjs"
     desktop_package_path = root / "package.json"
     desktop_sidecar_script_path = root / "scripts" / "build_desktop_sidecar.py"
+    desktop_icon_script_path = root / "scripts" / "generate_desktop_icons.py"
+    mac_icon_path = root / "desktop" / "resources" / "icon.icns"
+    windows_icon_path = root / "desktop" / "resources" / "icon.ico"
+    sample_order_dir = root / "samples" / "customer_like_orders"
+    sample_pdf_path = sample_order_dir / "text_pdf_order.pdf"
 
     if not version_path.exists():
         errors.append("VERSION 文件缺失")
@@ -55,10 +60,36 @@ def validate_release_readiness(root: Path) -> list[str]:
 
     if not desktop_package_path.exists():
         errors.append("package.json 桌面打包配置缺失")
+    else:
+        try:
+            package_config = json.loads(desktop_package_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"package.json JSON 格式错误: {exc}")
+        else:
+            resources = package_config.get("build", {}).get("extraResources", [])
+            resource_targets = {
+                item.get("to")
+                for item in resources
+                if isinstance(item, dict)
+            }
+            if "templates" not in resource_targets:
+                errors.append("桌面打包配置缺少 templates 资源")
+            if "samples" not in resource_targets:
+                errors.append("桌面打包配置缺少 samples 资源")
     if not desktop_main_path.exists():
         errors.append("desktop/main.cjs 桌面壳入口缺失")
     if not desktop_sidecar_script_path.exists():
         errors.append("scripts/build_desktop_sidecar.py 桌面后端打包脚本缺失")
+    if not desktop_icon_script_path.exists():
+        errors.append("scripts/generate_desktop_icons.py 桌面图标生成脚本缺失")
+    if not mac_icon_path.exists():
+        errors.append("desktop/resources/icon.icns Mac 图标缺失")
+    if not windows_icon_path.exists():
+        errors.append("desktop/resources/icon.ico Windows 图标缺失")
+    if not sample_order_dir.exists():
+        errors.append("脱敏仿真订单样例目录缺失")
+    if not sample_pdf_path.exists():
+        errors.append("文本型 PDF 示例订单缺失")
 
     return errors
 

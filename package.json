@@ -42,10 +42,15 @@
       {
         "from": "templates",
         "to": "templates"
+      },
+      {
+        "from": "samples",
+        "to": "samples"
       }
     ],
     "mac": {
       "category": "public.app-category.business",
+      "icon": "desktop/resources/icon.icns",
       "target": [
         "zip"
       ]
@@ -54,6 +59,7 @@
       "sign": false
     },
     "win": {
+      "icon": "desktop/resources/icon.ico",
       "target": [
         "nsis",
         "msi"

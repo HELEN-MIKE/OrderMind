@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 747 >>
+stream
+BT
+/F1 10 Tf
+72 760 Td
+14 TL
+(Sanitized Simulation Text PDF Order) Tj
+T*
+(Note: Fictional entities only; no real customer or supplier data.) Tj
+T*
+(Seller: Meridian Demo Export Co.) Tj
+T*
+(Buyer: Summit Retail Simulation Ltd.) Tj
+T*
+(Order No: PDF-SIM-20260704-005) Tj
+T*
+(Payment Terms: T/T 30% deposit, 70% balance before shipment) Tj
+T*
+(Packaging: 16 PCS per export carton with fictional mark) Tj
+T*
+(Delivery Date: 2026-10-22) Tj
+T*
+(Item No,Description,Qty,Unit Price,Amount,Material,Unit,Delivery Date) Tj
+T*
+(OM-8101,Insulated Food Jar,260,11.20,2912.00,304 stainless steel,PCS,2026-10-22) Tj
+T*
+(OM-8102,Silicone Lunch Divider,520,2.10,1092.00,food grade silicone,PCS,2026-10-24) Tj
+T*
+(Total Qty: 780) Tj
+T*
+(Grand Total: 4004.00) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1108
+%%EOF

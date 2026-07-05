@@ -1,0 +1,16 @@
+Sanitized Simulation Commercial Invoice
+Note: Fictional company, contact, address, and order references for OrderMind testing only.
+Seller: Northstar Homeware Simulation Ltd.
+Buyer: Harbor Retail Demo LLC
+Invoice No: CI-SIM-20260704-002
+Contact: Maya Chen / +1-555-0102
+Ship To: 1200 Demo Harbor Road, Sample City, CA 90000
+Payment Terms: T/T 30% deposit, 70% balance before shipment
+Packaging: 24 PCS per export carton, fictional shipping mark only
+Delivery Date: 2026-09-05
+Item No,Description,Qty,Unit Price,Amount,Material,Unit,Delivery Date
+OM-4101,Stainless Travel Mug,500,6.80,3400.00,304 stainless steel,PCS,2026-09-05
+OM-4102,Silicone Straw Set,800,1.25,1000.00,food grade silicone,SET,2026-09-05
+OM-4103,Bamboo Gift Box,400,8.50,3400.00,bamboo fiber board,PCS,2026-09-12
+Total Qty: 1700
+Grand Total: 7800.00
