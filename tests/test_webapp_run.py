@@ -68,6 +68,7 @@ class WebappRunTest(unittest.TestCase):
 
         self.assertEqual(webapp.DATA_DIR, Path(tmpdir))
         self.assertEqual(auth_store.path, Path(tmpdir) / "users.json")
+        self.assertEqual(webapp.user_template_dir(), Path(tmpdir) / "templates")
 
     def test_configure_runtime_uses_desktop_resource_directory_from_environment(self):
         with TemporaryDirectory() as tmpdir, patch.dict(
@@ -102,6 +103,18 @@ class WebappRunTest(unittest.TestCase):
 
         sample_path = webapp._safe_sample_path("domestic_purchase_order_zh.txt")
         self.assertEqual(sample_path.name, "domestic_purchase_order_zh.txt")
+
+    def test_safe_template_path_supports_user_templates_only_by_safe_id(self):
+        with TemporaryDirectory() as tmpdir, patch.object(webapp, "DATA_DIR", Path(tmpdir)):
+            saved_path = webapp.save_user_template_from_form(
+                {"name": "客户路径安全规则", "decimal_places": "2"}
+            )
+
+            resolved = webapp._safe_template_path(f"user:{saved_path.name}")
+
+            self.assertEqual(resolved, saved_path)
+            with self.assertRaises(ValueError):
+                webapp._safe_template_path("user:../bad.json")
 
 
 if __name__ == "__main__":

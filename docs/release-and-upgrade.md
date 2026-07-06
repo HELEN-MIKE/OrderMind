@@ -16,6 +16,8 @@
 
 扫描件 PDF 和图片订单属于可选 OCR 能力：安装包不强制内置 OCR 引擎，客户电脑可安装 Tesseract，或通过 `ORDERMIND_OCR_COMMAND` 指向自定义 OCR 命令。
 
+客户规则模板现在可在本地页面中查看、编辑并保存。内置模板随安装包分发，用户保存的模板写入桌面数据目录下的 `templates/`，升级应用时不应覆盖。
+
 ## 2. 版本号规则
 
 使用语义化版本：
@@ -175,6 +177,14 @@ scripts/migrate_data.py
 - 迁移前创建备份。
 - 迁移失败时可回滚。
 - CHANGELOG 记录迁移影响。
+
+用户规则模板目录:
+
+```text
+ORDERMIND_DATA_DIR/templates/
+```
+
+发布验收时需要确认保存的用户模板可以在首页模板下拉框中选择，并且不会改写安装包内置 `templates/default_order_rules.json`。
 
 ## 8. 发布前门禁
 

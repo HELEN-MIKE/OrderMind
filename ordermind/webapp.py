@@ -7,6 +7,7 @@ import os
 import secrets
 import sys
 import tempfile
+import re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,8 +21,9 @@ from ordermind.auth import (
 from ordermind.extractors.dispatcher import parse_order_file
 from ordermind.i18n import normalize_language, t
 from ordermind.reporting import build_result_payload, payload_to_json, payload_to_xlsx
+from ordermind.rules import RuleTemplate
 from ordermind.rules import validate_order
-from ordermind.templates import load_template
+from ordermind.templates import load_template, save_template
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_DIR = Path(os.environ.get("ORDERMIND_RESOURCE_DIR", ROOT))
@@ -38,6 +40,7 @@ SAMPLE_ORDER_DESCRIPTIONS = {
     "text_pdf_order.pdf": "文本型 PDF 订单",
     "review_findings_bad_amount_missing_material.txt": "故意带问题样例",
 }
+USER_TEMPLATE_PREFIX = "user:"
 SUPPORTED_UPLOAD_SUFFIXES = {
     ".txt",
     ".csv",
@@ -81,6 +84,13 @@ class OrderMindHandler(BaseHTTPRequestHandler):
         if parsed.path == "/change-password":
             self._send_html(render_change_password(lang=lang))
             return
+        if parsed.path == "/templates":
+            if not self._current_username():
+                self._redirect(f"/login?lang={lang}")
+                return
+            selected = parse_qs(parsed.query).get("template", [""])[0]
+            self._send_html(render_template_manager(lang=lang, selected_template=selected))
+            return
         if parsed.path == "/":
             if not self._current_username():
                 self._redirect(f"/login?lang={lang}")
@@ -99,6 +109,9 @@ class OrderMindHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/export-report":
             self._handle_export_report()
+            return
+        if parsed.path == "/templates/save":
+            self._handle_save_template()
             return
         if parsed.path == "/analyze-sample":
             self._handle_analyze_sample()
@@ -202,6 +215,25 @@ class OrderMindHandler(BaseHTTPRequestHandler):
             return
         report_html = render_export_report(payload, lang=lang)
         self._send_download(report_html, _download_filename(source_name, extension=".html"), "text/html; charset=utf-8")
+
+    def _handle_save_template(self) -> None:
+        """保存用户自定义规则模板。"""
+
+        if not self._current_username():
+            self._redirect("/login")
+            return
+        form = self._parse_urlencoded()
+        lang = normalize_language(form.get("lang", "zh"))
+        try:
+            saved_path = save_user_template_from_form(form)
+        except Exception as exc:  # noqa: BLE001 - local user needs actionable feedback
+            self._send_html(
+                render_template_manager(lang=lang, error=str(exc)),
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+        selected = f"{USER_TEMPLATE_PREFIX}{saved_path.name}"
+        self._send_html(render_template_manager(lang=lang, selected_template=selected, notice=t(lang, "template_saved")))
 
     def _parse_multipart(self) -> dict[str, object]:
         """解析 multipart/form-data。
@@ -315,6 +347,67 @@ def analyze_upload(upload: UploadedFile, template_name: str) -> dict[str, object
     return build_result_payload(record, report)
 
 
+def user_template_dir() -> Path:
+    """返回用户自定义模板目录。"""
+
+    return DATA_DIR / "templates"
+
+
+def template_options() -> list[dict[str, str]]:
+    """返回首页和模板管理页可选择的模板清单。"""
+
+    options: list[dict[str, str]] = []
+    for path in sorted(TEMPLATE_DIR.glob("*.json")):
+        try:
+            template = load_template(path)
+            label = template.name
+        except Exception:  # noqa: BLE001 - broken template should not hide the page
+            label = path.stem
+        options.append({"id": path.name, "filename": path.name, "label": label, "kind": "builtin"})
+    for path in sorted(user_template_dir().glob("*.json")):
+        try:
+            template = load_template(path)
+            label = template.name
+        except Exception:  # noqa: BLE001 - show filename so user can repair it
+            label = path.stem
+        options.append(
+            {
+                "id": f"{USER_TEMPLATE_PREFIX}{path.name}",
+                "filename": path.name,
+                "label": label,
+                "kind": "user",
+            }
+        )
+    return options
+
+
+def save_user_template_from_form(form: dict[str, str]) -> Path:
+    """把模板管理表单保存为用户模板 JSON。"""
+
+    name = (form.get("name") or "").strip()
+    if not name:
+        raise ValueError("模板名称不能为空")
+    filename = _template_filename(name)
+    template = RuleTemplate(
+        name=name,
+        required_fields=_split_list_field(form.get("required_fields", "")),
+        item_no_pattern=(form.get("item_no_pattern") or "").strip(),
+        allowed_units=_split_list_field(form.get("allowed_units", "")),
+        total_amount_tolerance=_decimal_text(form.get("total_amount_tolerance"), "0.05"),
+        line_amount_tolerance=_decimal_text(form.get("line_amount_tolerance"), "0.02"),
+        decimal_places=_int_text(form.get("decimal_places"), 2),
+        spare_ratio=_optional_decimal_text(form.get("spare_ratio")),
+        quantity_tolerance=_optional_decimal_text(form.get("quantity_tolerance")),
+        material_keywords=_split_list_field(form.get("material_keywords", "")),
+        packaging_keywords=_split_list_field(form.get("packaging_keywords", "")),
+    )
+    target_dir = user_template_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / filename
+    save_template(template, target_path)
+    return target_path
+
+
 def sample_order_options() -> list[dict[str, str]]:
     """返回首页可展示的脱敏样例清单。
 
@@ -420,10 +513,7 @@ def render_home(lang: str = "zh", error: str = "") -> str:
 
     lang = normalize_language(lang)
     switch_lang = t(lang, "switch_language_code")
-    options = "\n".join(
-        f'<option value="{html.escape(path.name)}">{html.escape(path.stem)}</option>'
-        for path in sorted(TEMPLATE_DIR.glob("*.json"))
-    )
+    options = _template_select_options(lang=lang)
     error_html = f'<div class="alert">{html.escape(error)}</div>' if error else ""
     guide_items = "\n".join(
         f"""<li>
@@ -460,6 +550,7 @@ def render_home(lang: str = "zh", error: str = "") -> str:
         <h1>{html.escape(t(lang, "workspace_title"))}</h1>
       </div>
       <div class="top-actions">
+        <a class="link-button" href="/templates?lang={html.escape(lang)}">{html.escape(t(lang, "manage_templates"))}</a>
         <a class="link-button" href="/?lang={html.escape(switch_lang)}">{html.escape(t(lang, "switch_language"))}</a>
         <a class="link-button" href="/logout?lang={html.escape(lang)}">{html.escape(t(lang, "logout"))}</a>
         <span class="status">{html.escape(t(lang, "privacy_badge"))}</span>
@@ -498,6 +589,95 @@ def render_home(lang: str = "zh", error: str = "") -> str:
       <div class="metric"><strong>{html.escape(t(lang, "validation_scope"))}</strong><span>{html.escape(t(lang, "validation_scope_value"))}</span></div>
       <div class="metric"><strong>{html.escape(t(lang, "roadmap"))}</strong><span>{html.escape(t(lang, "roadmap_value"))}</span></div>
     </section>
+  </main>
+</body>
+</html>"""
+
+
+def render_template_manager(
+    lang: str = "zh",
+    selected_template: str = "",
+    error: str = "",
+    notice: str = "",
+) -> str:
+    """渲染规则模板管理页。"""
+
+    lang = normalize_language(lang)
+    switch_lang = t(lang, "switch_language_code")
+    options = template_options()
+    selected_id = selected_template or (options[0]["id"] if options else "")
+    selected_path = _safe_template_path(selected_id) if selected_id else TEMPLATE_DIR / "default_order_rules.json"
+    selected = load_template(selected_path)
+    selected_meta = next((option for option in options if option["id"] == selected_id), {"kind": "builtin"})
+    readonly_note = ""
+    if selected_meta.get("kind") == "builtin":
+        readonly_note = f"<p class='hint'>{html.escape(t(lang, 'builtin_template_hint'))}</p>"
+    selector = _template_select_options(lang=lang, selected_id=selected_id)
+    error_html = f'<div class="alert">{html.escape(error)}</div>' if error else ""
+    notice_html = f'<div class="notice">{html.escape(notice)}</div>' if notice else ""
+    raw_json = html.escape(payload_to_json(_template_payload(selected)))
+    return f"""<!doctype html>
+<html lang="{_html_lang(lang)}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(t(lang, "template_manager"))} - OrderMind</title>
+  <style>{STYLE}</style>
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">{html.escape(t(lang, "app_title"))}</p>
+        <h1>{html.escape(t(lang, "template_manager"))}</h1>
+      </div>
+      <div class="top-actions">
+        <a class="link-button" href="/?lang={html.escape(lang)}">{html.escape(t(lang, "upload_again"))}</a>
+        <a class="link-button" href="/templates?lang={html.escape(switch_lang)}">{html.escape(t(lang, "switch_language"))}</a>
+        <a class="link-button" href="/logout?lang={html.escape(lang)}">{html.escape(t(lang, "logout"))}</a>
+      </div>
+    </section>
+    {error_html}
+    {notice_html}
+    <section class="panel">
+      <form method="get" action="/templates" class="template-switcher">
+        <input type="hidden" name="lang" value="{html.escape(lang)}">
+        <label>
+          <span>{html.escape(t(lang, "rule_template"))}</span>
+          <select name="template">{selector}</select>
+        </label>
+        <button type="submit">{html.escape(t(lang, "view_template"))}</button>
+      </form>
+      {readonly_note}
+    </section>
+    <form method="post" action="/templates/save" class="template-editor">
+      <input type="hidden" name="lang" value="{html.escape(lang)}">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>{html.escape(t(lang, "template_basic_rules"))}</h2>
+            <p class="hint">{html.escape(t(lang, "template_save_hint"))}</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          {_input_field(lang, "name", t(lang, "template_name"), selected.name)}
+          {_input_field(lang, "item_no_pattern", t(lang, "item_no_pattern"), selected.item_no_pattern)}
+          {_input_field(lang, "allowed_units", t(lang, "allowed_units"), _join_list(selected.allowed_units))}
+          {_input_field(lang, "required_fields", t(lang, "required_fields"), _join_list(selected.required_fields))}
+          {_input_field(lang, "total_amount_tolerance", t(lang, "total_amount_tolerance"), str(selected.total_amount_tolerance))}
+          {_input_field(lang, "line_amount_tolerance", t(lang, "line_amount_tolerance"), str(selected.line_amount_tolerance))}
+          {_input_field(lang, "decimal_places", t(lang, "decimal_places"), str(selected.decimal_places))}
+          {_input_field(lang, "quantity_tolerance", t(lang, "quantity_tolerance"), "" if selected.quantity_tolerance is None else str(selected.quantity_tolerance))}
+          {_input_field(lang, "material_keywords", t(lang, "material_keywords"), _join_list(selected.material_keywords))}
+          {_input_field(lang, "packaging_keywords", t(lang, "packaging_keywords"), _join_list(selected.packaging_keywords))}
+        </div>
+        <button type="submit" class="save-template-button">{html.escape(t(lang, "save_template"))}</button>
+      </section>
+      <section class="panel">
+        <h2>{html.escape(t(lang, "template_json_preview"))}</h2>
+        <pre>{raw_json}</pre>
+      </section>
+    </form>
   </main>
 </body>
 </html>"""
@@ -729,12 +909,108 @@ def _port_from_env(default: int) -> int:
 
 
 def _safe_template_path(template_name: str) -> Path:
-    """只允许从内置模板目录读取文件，避免路径穿越。"""
+    """只允许读取内置模板或用户模板，避免路径穿越。"""
+
+    if template_name.startswith(USER_TEMPLATE_PREFIX):
+        user_name = template_name.removeprefix(USER_TEMPLATE_PREFIX)
+        if Path(user_name).name != user_name:
+            raise ValueError(f"规则模板不存在: {template_name}")
+        path = user_template_dir() / user_name
+        if not path.exists():
+            raise ValueError(f"规则模板不存在: {template_name}")
+        return path
 
     path = TEMPLATE_DIR / Path(template_name).name
     if not path.exists():
         raise ValueError(f"规则模板不存在: {template_name}")
     return path
+
+
+def _template_filename(name: str) -> str:
+    """把模板名称转换成安全 JSON 文件名。"""
+
+    if any(part in name for part in ("/", "\\", "..")):
+        raise ValueError("模板名称不能包含路径字符")
+    normalized = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._ -]+", "_", name).strip(" ._")
+    if not normalized:
+        raise ValueError("模板名称不能为空")
+    return f"{normalized}.json"
+
+
+def _split_list_field(value: str) -> list[str]:
+    """解析逗号、中文逗号或换行分隔的表单字段。"""
+
+    return [item.strip() for item in re.split(r"[,，\n]+", value or "") if item.strip()]
+
+
+def _decimal_text(value: str | None, default: str) -> str:
+    """保留 Decimal 字段的字符串形态，交给模板加载器做精度转换。"""
+
+    text = (value or "").strip()
+    return text if text else default
+
+
+def _optional_decimal_text(value: str | None) -> str | None:
+    text = (value or "").strip()
+    return text if text else None
+
+
+def _int_text(value: str | None, default: int) -> int:
+    text = (value or "").strip()
+    if not text:
+        return default
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise ValueError("小数位数必须是整数") from exc
+
+
+def _template_select_options(lang: str = "zh", selected_id: str = "") -> str:
+    """渲染模板下拉选项。"""
+
+    rows: list[str] = []
+    for option in template_options():
+        selected_attr = " selected" if option["id"] == selected_id else ""
+        label = option["label"]
+        if option["kind"] == "user":
+            label = f"{label} ({t(lang, 'user_template_badge')})"
+        rows.append(
+            f'<option value="{html.escape(option["id"])}"{selected_attr}>{html.escape(label)}</option>'
+        )
+    return "\n".join(rows)
+
+
+def _input_field(lang: str, name: str, label: str, value: str) -> str:
+    """渲染模板编辑表单中的单个字段。"""
+
+    return (
+        "<label>"
+        f"<span>{html.escape(label)}</span>"
+        f'<input name="{html.escape(name)}" value="{html.escape(value, quote=True)}">'
+        "</label>"
+    )
+
+
+def _join_list(values: list[str]) -> str:
+    return ", ".join(values)
+
+
+def _template_payload(template: RuleTemplate) -> dict[str, object]:
+    """把 RuleTemplate 转成可显示的 JSON 预览。"""
+
+    return {
+        "name": template.name,
+        "required_fields": template.required_fields,
+        "item_no_pattern": template.item_no_pattern,
+        "allowed_units": template.allowed_units,
+        "total_amount_tolerance": str(template.total_amount_tolerance),
+        "line_amount_tolerance": str(template.line_amount_tolerance),
+        "decimal_places": template.decimal_places,
+        "spare_ratio": None if template.spare_ratio is None else str(template.spare_ratio),
+        "quantity_tolerance": None if template.quantity_tolerance is None else str(template.quantity_tolerance),
+        "material_keywords": template.material_keywords,
+        "packaging_keywords": template.packaging_keywords,
+    }
 
 
 def _safe_sample_path(sample_name: str) -> Path:
@@ -955,6 +1231,25 @@ h2 { margin: 0 0 16px; font-size: 20px; }
   gap: 16px;
   align-items: end;
 }
+.template-switcher {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: end;
+}
+.template-editor {
+  margin: 0;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.save-template-button {
+  width: auto;
+  min-width: 160px;
+  margin-top: 18px;
+}
 label span {
   display: block;
   margin-bottom: 8px;
@@ -1039,10 +1334,11 @@ pre {
   margin-bottom: 16px;
 }
 @media (max-width: 820px) {
-  .topbar, .upload-form, .top-actions { display: block; }
+  .topbar, .upload-form, .template-switcher, .top-actions { display: block; }
   .status, .link-button, input, select, button { margin-top: 12px; }
-  .grid, .guide-list { grid-template-columns: 1fr; }
+  .grid, .guide-list, .form-grid { grid-template-columns: 1fr; }
   .sample-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .save-template-button { width: 100%; }
 }
 @media (max-width: 640px) {
   .sample-grid { grid-template-columns: 1fr; }

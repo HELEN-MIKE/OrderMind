@@ -1,6 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from ordermind.i18n import SUPPORTED_LANGUAGES, t
+from ordermind import webapp
 from ordermind.webapp import render_export_report, render_home, render_result, sample_order_options
 
 
@@ -30,6 +34,8 @@ class I18nWebappTest(unittest.TestCase):
         self.assertIn(".jpg", chinese)
         self.assertIn("图片 OCR", chinese)
         self.assertIn("image OCR", english)
+        self.assertIn("/templates", chinese)
+        self.assertIn("规则模板", chinese)
 
     def test_sample_order_options_only_expose_curated_examples(self):
         options = sample_order_options()
@@ -38,6 +44,27 @@ class I18nWebappTest(unittest.TestCase):
         self.assertIn("domestic_purchase_order_zh.txt", names)
         self.assertIn("review_findings_bad_amount_missing_material.txt", names)
         self.assertNotIn("README.md", names)
+
+    def test_template_manager_page_renders_editable_fields(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            with patch.object(webapp, "DATA_DIR", data_dir):
+                page = webapp.render_template_manager(lang="zh")
+
+        self.assertIn('action="/templates/save"', page)
+        self.assertIn('name="item_no_pattern"', page)
+        self.assertIn('name="required_fields"', page)
+        self.assertIn("默认审单规则", page)
+
+    def test_home_template_dropdown_includes_user_templates(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            with patch.object(webapp, "DATA_DIR", data_dir):
+                webapp.save_user_template_from_form({"name": "客户B规则", "decimal_places": "2"})
+                page = render_home(lang="zh")
+
+        self.assertIn('value="user:客户B规则.json"', page)
+        self.assertIn("客户B规则", page)
 
     def test_result_page_renders_empty_issue_message_in_selected_language(self):
         payload = {

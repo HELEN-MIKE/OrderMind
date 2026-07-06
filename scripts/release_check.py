@@ -109,6 +109,13 @@ def validate_release_readiness(root: Path) -> list[str]:
         errors.append(".github/workflows/release-build.yml Windows/macOS 安装包 CI 缺失")
     if not ocr_extractor_path.exists():
         errors.append("ordermind/extractors/ocr.py OCR 解析器缺失")
+    webapp_path = root / "ordermind" / "webapp.py"
+    if not webapp_path.exists():
+        errors.append("ordermind/webapp.py 本地 Web 工作台缺失")
+    else:
+        webapp_text = webapp_path.read_text(encoding="utf-8")
+        if "/templates" not in webapp_text or "/templates/save" not in webapp_text:
+            errors.append("本地 Web 工作台缺少规则模板管理页面或保存路由")
     if not sample_order_dir.exists():
         errors.append("脱敏仿真订单样例目录缺失")
     if not sample_pdf_path.exists():
