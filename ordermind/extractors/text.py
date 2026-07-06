@@ -82,11 +82,11 @@ def _extract_csv_like_rows(lines: list[str]) -> list[list[str]]:
     """提取 CSV/TSV 风格的表格行。"""
 
     candidates = [line for line in lines if "," in line or "\t" in line]
-    if not candidates:
-        return []
-    delimiter = "\t" if sum("\t" in line for line in candidates) > sum("," in line for line in candidates) else ","
-    reader = csv.reader(StringIO("\n".join(candidates)), delimiter=delimiter)
-    return [[cell.strip() for cell in row] for row in reader if any(cell.strip() for cell in row)]
+    if candidates:
+        delimiter = "\t" if sum("\t" in line for line in candidates) > sum("," in line for line in candidates) else ","
+        reader = csv.reader(StringIO("\n".join(candidates)), delimiter=delimiter)
+        return [[cell.strip() for cell in row] for row in reader if any(cell.strip() for cell in row)]
+    return _extract_space_aligned_rows(lines)
 
 
 def _rows_to_order_lines(rows: list[list[str]], source_name: str) -> list[OrderLine]:
@@ -96,10 +96,16 @@ def _rows_to_order_lines(rows: list[list[str]], source_name: str) -> list[OrderL
     if header_index is None:
         return []
     headers = rows[header_index]
+    data_start_index = header_index + 1
+    if header_index + 1 < len(rows):
+        merged_headers = _merge_header_rows(headers, rows[header_index + 1])
+        if len(_map_headers(merged_headers)) > len(_map_headers(headers)):
+            headers = merged_headers
+            data_start_index = header_index + 2
     mapping = _map_headers(headers)
     lines: list[OrderLine] = []
-    for row_no, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
-        if _looks_like_summary_row(row):
+    for row_no, row in enumerate(rows[data_start_index:], start=data_start_index + 1):
+        if _looks_like_header_row(row) or _looks_like_summary_row(row):
             continue
         line = OrderLine(
             item_no=_cell(row, mapping.get("item_no")),
@@ -135,6 +141,8 @@ def _find_header_index(rows: list[list[str]]) -> int | None:
     best_score = 0
     for index, row in enumerate(rows):
         score = len(_map_headers(row))
+        if index + 1 < len(rows):
+            score = max(score, len(_map_headers(_merge_header_rows(row, rows[index + 1]))))
         if score > best_score:
             best_score = score
             best_index = index
@@ -150,15 +158,58 @@ def _map_headers(headers: list[str]) -> dict[str, int]:
         for field_name, aliases in HEADER_ALIASES.items():
             if field_name in mapping:
                 continue
-            if normalized in {_normalize_header(alias) for alias in aliases}:
+            if any(_header_matches_alias(normalized, _normalize_header(alias)) for alias in aliases):
                 mapping[field_name] = index
     return mapping
+
+
+def _merge_header_rows(top_row: list[str], bottom_row: list[str]) -> list[str]:
+    """合并两行拆分表头，例如 `Item` + `No`、`Unit` + `Price`。"""
+
+    width = max(len(top_row), len(bottom_row))
+    merged: list[str] = []
+    for index in range(width):
+        top = _cell(top_row, index)
+        bottom = _cell(bottom_row, index)
+        if top and bottom:
+            merged.append(f"{top} {bottom}")
+        else:
+            merged.append(top or bottom)
+    return merged
+
+
+def _extract_space_aligned_rows(lines: list[str]) -> list[list[str]]:
+    """提取 OCR/PDF 常见的多空格对齐表格。"""
+
+    rows = [
+        [cell.strip() for cell in re.split(r"\s{2,}", line.strip()) if cell.strip()]
+        for line in lines
+        if re.search(r"\s{2,}", line.strip())
+    ]
+    table_like_rows = [row for row in rows if len(row) >= 3]
+    return table_like_rows if len(table_like_rows) >= 2 else []
+
+
+def _looks_like_header_row(row: list[str]) -> bool:
+    """判断一行是否仍像拆分表头，避免把第二行表头当明细。"""
+
+    return len(_map_headers(row)) >= 2
 
 
 def _normalize_header(value: str) -> str:
     """归一化表头，去掉空格、下划线和大小写差异。"""
 
     return re.sub(r"[\s_./-]+", "", value.strip().lower())
+
+
+def _header_matches_alias(normalized_header: str, normalized_alias: str) -> bool:
+    """判断表头是否匹配字段别名，兼容 `Order Qty` 这类组合表头。"""
+
+    if not normalized_header or not normalized_alias:
+        return False
+    if normalized_header == normalized_alias:
+        return True
+    return len(normalized_alias) >= 3 and normalized_alias in normalized_header
 
 
 def _cell(row: list[str], index: int | None) -> str:

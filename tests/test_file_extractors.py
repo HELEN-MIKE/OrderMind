@@ -23,6 +23,41 @@ class FileExtractorsTest(unittest.TestCase):
         self.assertEqual(record.lines[1].quantity, Decimal("50"))
         self.assertEqual(record.total_amount, Decimal("400.00"))
 
+    def test_parse_complex_xlsx_recovers_merged_header_and_multiline_labels(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "complex.xlsx"
+            _write_complex_xlsx(path)
+
+            record = parse_order_file(path)
+
+        self.assertEqual(record.source_name, "complex.xlsx")
+        self.assertEqual(len(record.lines), 2)
+        self.assertEqual(record.lines[0].item_no, "OM-3101")
+        self.assertEqual(record.lines[0].product_name, "Vacuum Bottle")
+        self.assertEqual(record.lines[0].material, "304 stainless steel")
+        self.assertEqual(record.lines[1].quantity, Decimal("60"))
+        self.assertEqual(record.total_amount, Decimal("1170.00"))
+
+    def test_parse_space_aligned_text_table_recovers_order_lines(self):
+        text = """OCR text table
+Item No     Description       Qty   Unit Price   Amount    Material
+OM-7101     Travel Mug        40    8.50         340.00    stainless steel
+OM-7102     Gift Box          40    1.20         48.00     kraft paper
+Grand Total: 388.00
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "space-table.txt"
+            path.write_text(text, encoding="utf-8")
+
+            record = parse_order_file(path)
+
+        self.assertEqual(len(record.lines), 2)
+        self.assertEqual(record.lines[0].item_no, "OM-7101")
+        self.assertEqual(record.lines[0].product_name, "Travel Mug")
+        self.assertEqual(record.lines[1].material, "kraft paper")
+        self.assertEqual(record.total_amount, Decimal("388.00"))
+
     def test_parse_text_pdf_order_extracts_lines_from_content_stream(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "order.pdf"
@@ -142,6 +177,94 @@ def _write_minimal_xlsx(path: Path) -> None:
     <row r="5"><c r="D5" t="s"><v>13</v></c><c r="E5" t="s"><v>14</v></c></row>
   </sheetData>
   <mergeCells count="1"><mergeCell ref="A1:F1"/></mergeCells>
+</worksheet>
+""",
+    }
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+
+def _write_complex_xlsx(path: Path) -> None:
+    files = {
+        "[Content_Types].xml": """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>
+""",
+        "_rels/.rels": """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+""",
+        "xl/workbook.xml": """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="客户乱格式订单" sheetId="1" r:id="rId1"/></sheets>
+</workbook>
+""",
+        "xl/_rels/workbook.xml.rels": """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>
+""",
+        "xl/sharedStrings.xml": """<?xml version="1.0" encoding="UTF-8"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="22" uniqueCount="22">
+  <si><t>Customer Draft PO</t></si>
+  <si><t>Remark: merged title and two-row header should not block parsing</t></si>
+  <si><t>Item</t></si>
+  <si><t>Product</t></si>
+  <si><t>Material</t></si>
+  <si><t>Order</t></si>
+  <si><t>Unit</t></si>
+  <si><t>Line</t></si>
+  <si><t>No</t></si>
+  <si><t>Name</t></si>
+  <si><t></t></si>
+  <si><t>Qty</t></si>
+  <si><t>Price</t></si>
+  <si><t>Amount</t></si>
+  <si><t>OM-3101</t></si>
+  <si><t>Vacuum Bottle</t></si>
+  <si><t>304 stainless steel</t></si>
+  <si><t>OM-3102</t></si>
+  <si><t>Replacement Lid</t></si>
+  <si><t>PP</t></si>
+  <si><t>Grand Total</t></si>
+  <si><t>1170.00</t></si>
+</sst>
+""",
+        "xl/worksheets/sheet1.xml": """<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+    <row r="2"><c r="A2" t="s"><v>1</v></c></row>
+    <row r="3">
+      <c r="A3" t="s"><v>2</v></c><c r="B3" t="s"><v>3</v></c><c r="C3" t="s"><v>4</v></c>
+      <c r="D3" t="s"><v>5</v></c><c r="E3" t="s"><v>6</v></c><c r="F3" t="s"><v>7</v></c>
+    </row>
+    <row r="4">
+      <c r="A4" t="s"><v>8</v></c><c r="B4" t="s"><v>9</v></c>
+      <c r="D4" t="s"><v>11</v></c><c r="E4" t="s"><v>12</v></c><c r="F4" t="s"><v>13</v></c>
+    </row>
+    <row r="5">
+      <c r="A5" t="s"><v>14</v></c><c r="B5" t="s"><v>15</v></c><c r="C5" t="s"><v>16</v></c>
+      <c r="D5"><v>100</v></c><c r="E5"><v>9.9</v></c><c r="F5"><v>990.00</v></c>
+    </row>
+    <row r="6">
+      <c r="A6" t="s"><v>17</v></c><c r="B6" t="s"><v>18</v></c><c r="C6" t="s"><v>19</v></c>
+      <c r="D6"><v>60</v></c><c r="E6"><v>3</v></c><c r="F6"><v>180.00</v></c>
+    </row>
+    <row r="7"><c r="E7" t="s"><v>20</v></c><c r="F7" t="s"><v>21</v></c></row>
+  </sheetData>
+  <mergeCells count="2">
+    <mergeCell ref="A1:F1"/>
+    <mergeCell ref="A2:F2"/>
+  </mergeCells>
 </worksheet>
 """,
     }
