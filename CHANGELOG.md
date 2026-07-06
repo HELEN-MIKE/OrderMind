@@ -22,6 +22,7 @@
 - Optional OCR fallback for scanned PDFs and image orders through a local OCR command.
 - Table recovery improvements for split Excel headers and space-aligned OCR/PDF text tables.
 - Rule template management page for viewing, editing, and saving user templates without changing built-in defaults.
+- Release engineering hooks for macOS notarization, Windows signing, update manifest generation, and in-app update checks.
 - GitHub Actions installer build workflow for macOS and Windows packaging validation.
 - Customer demo guide for running normal samples, issue samples, and report export.
 - Release metadata and upgrade planning documents.

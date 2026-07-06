@@ -12,6 +12,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 from ordermind.auth import (
     AuthStore,
@@ -32,6 +33,7 @@ SAMPLE_ORDER_DIR = RESOURCE_DIR / "samples" / "customer_like_orders"
 DATA_DIR = Path(os.environ.get("ORDERMIND_DATA_DIR", ROOT / "data"))
 AUTH_STORE = AuthStore(DATA_DIR / "users.json")
 SESSIONS: dict[str, str] = {}
+APP_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 SAMPLE_ORDER_DESCRIPTIONS = {
     "domestic_purchase_order_zh.txt": "中文采购订单",
     "commercial_invoice_en.csv": "英文商业发票",
@@ -90,6 +92,12 @@ class OrderMindHandler(BaseHTTPRequestHandler):
                 return
             selected = parse_qs(parsed.query).get("template", [""])[0]
             self._send_html(render_template_manager(lang=lang, selected_template=selected))
+            return
+        if parsed.path == "/updates":
+            if not self._current_username():
+                self._redirect(f"/login?lang={lang}")
+                return
+            self._send_html(render_update_status(lang=lang))
             return
         if parsed.path == "/":
             if not self._current_username():
@@ -408,6 +416,69 @@ def save_user_template_from_form(form: dict[str, str]) -> Path:
     return target_path
 
 
+def check_update_status(manifest_source: str, current_version: str = APP_VERSION) -> dict[str, str]:
+    """读取更新清单并判断当前版本是否需要升级。"""
+
+    if not manifest_source:
+        return {
+            "state": "not_configured",
+            "current_version": current_version,
+            "latest_version": current_version,
+            "url": "",
+            "notes": "",
+        }
+    try:
+        manifest = _load_update_manifest(manifest_source)
+    except Exception as exc:  # noqa: BLE001 - show user actionable update status
+        return {
+            "state": "error",
+            "current_version": current_version,
+            "latest_version": current_version,
+            "url": "",
+            "notes": str(exc),
+        }
+    latest_version = str(manifest.get("version") or current_version)
+    platform_info = _current_platform_info(manifest)
+    state = "available" if _version_tuple(latest_version) > _version_tuple(current_version) else "current"
+    return {
+        "state": state,
+        "current_version": current_version,
+        "latest_version": latest_version,
+        "url": str(platform_info.get("url") or ""),
+        "notes": str(manifest.get("notes") or ""),
+    }
+
+
+def _load_update_manifest(source: str) -> dict[str, object]:
+    """从本地路径或 HTTP(S) 地址读取更新清单。"""
+
+    if source.startswith(("http://", "https://")):
+        with urlopen(source, timeout=5) as response:  # noqa: S310 - user-configured update URL
+            return json.loads(response.read().decode("utf-8"))
+    return json.loads(Path(source).read_text(encoding="utf-8"))
+
+
+def _current_platform_info(manifest: dict[str, object]) -> dict[str, object]:
+    platforms = manifest.get("platforms")
+    if not isinstance(platforms, dict):
+        return {}
+    if sys.platform == "darwin":
+        preferred = "darwin-aarch64" if os.uname().machine == "arm64" else "darwin-x86_64"
+    elif sys.platform.startswith("win"):
+        preferred = "windows-x86_64"
+    else:
+        preferred = ""
+    value = platforms.get(preferred, {}) if preferred else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    parts = [int(part) for part in re.findall(r"\d+", version)[:3]]
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
 def sample_order_options() -> list[dict[str, str]]:
     """返回首页可展示的脱敏样例清单。
 
@@ -551,6 +622,7 @@ def render_home(lang: str = "zh", error: str = "") -> str:
       </div>
       <div class="top-actions">
         <a class="link-button" href="/templates?lang={html.escape(lang)}">{html.escape(t(lang, "manage_templates"))}</a>
+        <a class="link-button" href="/updates?lang={html.escape(lang)}">{html.escape(t(lang, "check_updates"))}</a>
         <a class="link-button" href="/?lang={html.escape(switch_lang)}">{html.escape(t(lang, "switch_language"))}</a>
         <a class="link-button" href="/logout?lang={html.escape(lang)}">{html.escape(t(lang, "logout"))}</a>
         <span class="status">{html.escape(t(lang, "privacy_badge"))}</span>
@@ -678,6 +750,50 @@ def render_template_manager(
         <pre>{raw_json}</pre>
       </section>
     </form>
+  </main>
+</body>
+</html>"""
+
+
+def render_update_status(lang: str = "zh") -> str:
+    """渲染应用内更新检查页。"""
+
+    lang = normalize_language(lang)
+    source = os.environ.get("ORDERMIND_UPDATE_MANIFEST_URL", "")
+    status = check_update_status(source)
+    state_label = t(lang, f"update_state_{status['state']}")
+    action = ""
+    if status["url"]:
+        action = f'<a class="link-button action-button" href="{html.escape(status["url"])}">{html.escape(t(lang, "download_update"))}</a>'
+    return f"""<!doctype html>
+<html lang="{_html_lang(lang)}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(t(lang, "check_updates"))} - OrderMind</title>
+  <style>{STYLE}</style>
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">{html.escape(t(lang, "app_title"))}</p>
+        <h1>{html.escape(t(lang, "check_updates"))}</h1>
+      </div>
+      <div class="top-actions">
+        <a class="link-button" href="/?lang={html.escape(lang)}">{html.escape(t(lang, "upload_again"))}</a>
+      </div>
+    </section>
+    <section class="grid">
+      <div class="metric"><strong>{html.escape(status["current_version"])}</strong><span>{html.escape(t(lang, "current_version"))}</span></div>
+      <div class="metric"><strong>{html.escape(status["latest_version"])}</strong><span>{html.escape(t(lang, "latest_version"))}</span></div>
+      <div class="metric"><strong>{html.escape(state_label)}</strong><span>{html.escape(t(lang, "update_status"))}</span></div>
+    </section>
+    <section class="panel">
+      <h2>{html.escape(t(lang, "update_notes"))}</h2>
+      <p class="hint">{html.escape(status["notes"] or t(lang, "update_no_notes"))}</p>
+      {action}
+    </section>
   </main>
 </body>
 </html>"""

@@ -18,6 +18,12 @@
 
 客户规则模板现在可在本地页面中查看、编辑并保存。内置模板随安装包分发，用户保存的模板写入桌面数据目录下的 `templates/`，升级应用时不应覆盖。
 
+正式签名、公证和自动更新配置详见:
+
+```text
+docs/signing-and-updates.md
+```
+
 ## 2. 版本号规则
 
 使用语义化版本：
@@ -131,6 +137,16 @@ release/update-manifest.example.json
 ```
 
 正式环境需要把示例里的 `example.com`、签名和安装包文件名替换成真实发布地址。
+
+当前 Electron 版本已提供:
+
+- `electron-updater` generic provider 配置。
+- macOS `afterSign` 公证 hook。
+- Windows 签名 hook。
+- `scripts/generate_update_manifest.py` 更新清单生成脚本。
+- 应用内 `检查更新` 页面。
+
+缺少证书或更新地址时，构建会明确提示并跳过正式签名步骤；客户正式发布前必须补齐证书后重新打包。
 
 ## 6. 客户升级策略
 

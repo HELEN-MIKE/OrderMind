@@ -49,6 +49,10 @@ jobs:
       - name: Check release metadata
         run: python scripts/release_check.py
 
+      - name: Check signing environment
+        run: python scripts/check_signing_environment.py
+        continue-on-error: true
+
   windows-installer:
     name: Build Windows installer
     runs-on: windows-latest
@@ -91,6 +95,11 @@ jobs:
       - name: Build Windows installers
         run: npm run desktop:dist:win
 
+      - name: Generate update manifest
+        env:
+          ORDERMIND_UPDATE_BASE_URL: ${{ vars.ORDERMIND_UPDATE_BASE_URL }}
+        run: python scripts/generate_update_manifest.py --notes "OrderMind Windows release"
+
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
@@ -98,6 +107,9 @@ jobs:
           path: |
             release/installers/*.exe
             release/installers/*.msi
+            release/installers/*.yml
+            release/installers/*.blockmap
+            release/update-manifest.generated.json
           if-no-files-found: error
 
   mac-installer:
@@ -142,9 +154,18 @@ jobs:
       - name: Build macOS zip
         run: npm run desktop:dist:mac
 
+      - name: Generate update manifest
+        env:
+          ORDERMIND_UPDATE_BASE_URL: ${{ vars.ORDERMIND_UPDATE_BASE_URL }}
+        run: python scripts/generate_update_manifest.py --notes "OrderMind macOS release"
+
       - name: Upload macOS installer
         uses: actions/upload-artifact@v4
         with:
           name: OrderMind-macos-installers
-          path: release/installers/*.zip
+          path: |
+            release/installers/*.zip
+            release/installers/*.yml
+            release/installers/*.blockmap
+            release/update-manifest.generated.json
           if-no-files-found: error

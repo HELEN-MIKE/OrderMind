@@ -26,6 +26,10 @@ def validate_release_readiness(root: Path) -> list[str]:
     desktop_sidecar_script_path = root / "scripts" / "build_desktop_sidecar.py"
     desktop_python_launcher_path = root / "scripts" / "run_python.cjs"
     desktop_builder_launcher_path = root / "scripts" / "run_electron_builder.cjs"
+    signing_check_script_path = root / "scripts" / "check_signing_environment.py"
+    update_manifest_script_path = root / "scripts" / "generate_update_manifest.py"
+    mac_notarize_hook_path = root / "scripts" / "notarize_mac.cjs"
+    windows_sign_hook_path = root / "scripts" / "sign_windows.cjs"
     desktop_icon_script_path = root / "scripts" / "generate_desktop_icons.py"
     mac_icon_path = root / "desktop" / "resources" / "icon.icns"
     windows_icon_path = root / "desktop" / "resources" / "icon.ico"
@@ -33,6 +37,7 @@ def validate_release_readiness(root: Path) -> list[str]:
     ocr_extractor_path = root / "ordermind" / "extractors" / "ocr.py"
     sample_order_dir = root / "samples" / "customer_like_orders"
     sample_pdf_path = sample_order_dir / "text_pdf_order.pdf"
+    signing_docs_path = root / "docs" / "signing-and-updates.md"
 
     if not version_path.exists():
         errors.append("VERSION 文件缺失")
@@ -80,6 +85,17 @@ def validate_release_readiness(root: Path) -> list[str]:
                 errors.append("桌面打包配置缺少 templates 资源")
             if "samples" not in resource_targets:
                 errors.append("桌面打包配置缺少 samples 资源")
+            dependencies = package_config.get("dependencies", {})
+            if "electron-updater" not in dependencies:
+                errors.append("桌面包缺少 electron-updater 自动更新依赖")
+            build_config = package_config.get("build", {})
+            publish = build_config.get("publish", {})
+            if publish.get("provider") != "generic":
+                errors.append("桌面打包配置缺少 generic publish 自动更新配置")
+            if build_config.get("afterSign") != "scripts/notarize_mac.cjs":
+                errors.append("桌面打包配置缺少 macOS 公证 afterSign hook")
+            if build_config.get("win", {}).get("signtoolOptions", {}).get("sign") != "scripts/sign_windows.cjs":
+                errors.append("桌面打包配置缺少 Windows 签名 hook")
             scripts = package_config.get("scripts", {})
             sidecar_command = scripts.get("desktop:sidecar")
             if sidecar_command != "node scripts/run_python.cjs scripts/build_desktop_sidecar.py":
@@ -91,14 +107,33 @@ def validate_release_readiness(root: Path) -> list[str]:
                 command = scripts.get(script_name, "")
                 if "node scripts/run_electron_builder.cjs" not in command:
                     errors.append(f"{script_name} 必须使用跨平台 electron-builder 启动器")
+            if "release:check-signing" not in scripts:
+                errors.append("package.json 缺少 release:check-signing 脚本")
+            if "release:manifest" not in scripts:
+                errors.append("package.json 缺少 release:manifest 脚本")
     if not desktop_main_path.exists():
         errors.append("desktop/main.cjs 桌面壳入口缺失")
+    else:
+        desktop_main_text = desktop_main_path.read_text(encoding="utf-8")
+        for snippet in ("checkForUpdates", "downloadUpdate", "update-downloaded", "quitAndInstall"):
+            if snippet not in desktop_main_text:
+                errors.append(f"desktop/main.cjs 自动更新流程缺少 {snippet}")
     if not desktop_sidecar_script_path.exists():
         errors.append("scripts/build_desktop_sidecar.py 桌面后端打包脚本缺失")
     if not desktop_python_launcher_path.exists():
         errors.append("scripts/run_python.cjs 跨平台 Python 启动器缺失")
     if not desktop_builder_launcher_path.exists():
         errors.append("scripts/run_electron_builder.cjs 跨平台 electron-builder 启动器缺失")
+    elif "ORDERMIND_UPDATE_BASE_URL" not in desktop_builder_launcher_path.read_text(encoding="utf-8"):
+        errors.append("scripts/run_electron_builder.cjs 缺少自动更新地址默认值")
+    if not signing_check_script_path.exists():
+        errors.append("scripts/check_signing_environment.py 签名环境检查脚本缺失")
+    if not update_manifest_script_path.exists():
+        errors.append("scripts/generate_update_manifest.py 更新清单生成脚本缺失")
+    if not mac_notarize_hook_path.exists():
+        errors.append("scripts/notarize_mac.cjs macOS 公证 hook 缺失")
+    if not windows_sign_hook_path.exists():
+        errors.append("scripts/sign_windows.cjs Windows 签名 hook 缺失")
     if not desktop_icon_script_path.exists():
         errors.append("scripts/generate_desktop_icons.py 桌面图标生成脚本缺失")
     if not mac_icon_path.exists():
@@ -120,6 +155,8 @@ def validate_release_readiness(root: Path) -> list[str]:
         errors.append("脱敏仿真订单样例目录缺失")
     if not sample_pdf_path.exists():
         errors.append("文本型 PDF 示例订单缺失")
+    if not signing_docs_path.exists():
+        errors.append("docs/signing-and-updates.md 签名和自动更新文档缺失")
 
     return errors
 

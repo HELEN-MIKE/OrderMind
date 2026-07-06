@@ -11,9 +11,15 @@
     "desktop:dist:mac": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac zip",
     "desktop:dist:mac:dmg": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac dmg",
     "desktop:dist:win": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --win nsis msi",
-    "desktop:dist": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac zip --win nsis msi"
+    "desktop:dist": "npm run desktop:sidecar && node scripts/run_electron_builder.cjs --mac zip --win nsis msi",
+    "release:check-signing": "node scripts/run_python.cjs scripts/check_signing_environment.py",
+    "release:manifest": "node scripts/run_python.cjs scripts/generate_update_manifest.py"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "electron": "^43.0.0",
     "electron-builder": "^26.15.3"
   },
@@ -34,6 +40,10 @@
     "asarUnpack": [
       "release/desktop-sidecar/**/*"
     ],
+    "publish": {
+      "provider": "generic",
+      "url": "${env.ORDERMIND_UPDATE_BASE_URL}"
+    },
     "extraResources": [
       {
         "from": "release/desktop-sidecar",
@@ -51,15 +61,21 @@
     "mac": {
       "category": "public.app-category.business",
       "icon": "desktop/resources/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "target": [
         "zip"
       ]
     },
+    "afterSign": "scripts/notarize_mac.cjs",
     "dmg": {
-      "sign": false
+      "sign": true
     },
     "win": {
       "icon": "desktop/resources/icon.ico",
+      "signtoolOptions": {
+        "sign": "scripts/sign_windows.cjs"
+      },
       "target": [
         "nsis",
         "msi"

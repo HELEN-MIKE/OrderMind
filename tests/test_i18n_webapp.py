@@ -36,6 +36,8 @@ class I18nWebappTest(unittest.TestCase):
         self.assertIn("image OCR", english)
         self.assertIn("/templates", chinese)
         self.assertIn("规则模板", chinese)
+        self.assertIn("/updates", chinese)
+        self.assertIn("检查更新", chinese)
 
     def test_sample_order_options_only_expose_curated_examples(self):
         options = sample_order_options()
@@ -55,6 +57,13 @@ class I18nWebappTest(unittest.TestCase):
         self.assertIn('name="item_no_pattern"', page)
         self.assertIn('name="required_fields"', page)
         self.assertIn("默认审单规则", page)
+
+    def test_update_status_page_renders_not_configured_state(self):
+        page = webapp.render_update_status(lang="zh")
+
+        self.assertIn("检查更新", page)
+        self.assertIn("未配置", page)
+        self.assertIn("当前版本", page)
 
     def test_home_template_dropdown_includes_user_templates(self):
         with tempfile.TemporaryDirectory() as tmpdir:

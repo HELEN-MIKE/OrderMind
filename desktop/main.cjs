@@ -4,6 +4,7 @@ const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 
 let mainWindow = null;
 let backendProcess = null;
@@ -13,6 +14,7 @@ const DEFAULT_DEV_PORT = 8765;
 async function createWindow() {
   const port = await findAvailablePort(DEFAULT_DEV_PORT);
   await startBackend(port);
+  configureAutoUpdater();
   configureApplicationMenu();
 
   mainWindow = new BrowserWindow({
@@ -44,6 +46,10 @@ function configureApplicationMenu() {
       label: "OrderMind",
       submenu: [
         { role: "about", label: "关于 OrderMind" },
+        {
+          label: "检查更新",
+          click: () => checkForUpdatesFromMenu()
+        },
         { type: "separator" },
         { role: "quit", label: "退出 OrderMind" }
       ]
@@ -72,6 +78,71 @@ function configureApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function configureAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.on("update-available", async (info) => {
+    const result = await showMessageBox({
+      type: "info",
+      title: "发现新版本",
+      message: `发现 OrderMind ${info.version}。`,
+      detail: "是否现在下载更新安装包？",
+      buttons: ["下载更新", "稍后"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate().catch((error) => {
+        dialog.showErrorBox("更新下载失败", error.message);
+      });
+    }
+  });
+  autoUpdater.on("update-not-available", () => {
+    showMessageBox({
+      type: "info",
+      title: "已是最新版本",
+      message: "当前 OrderMind 已是最新版本。"
+    });
+  });
+  autoUpdater.on("update-downloaded", async (info) => {
+    const result = await showMessageBox({
+      type: "info",
+      title: "更新已下载",
+      message: `OrderMind ${info.version} 已下载完成。`,
+      detail: "重启应用后将安装新版本。",
+      buttons: ["重启并安装", "稍后"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall(false, true);
+    }
+  });
+  autoUpdater.on("error", (error) => {
+    dialog.showErrorBox("更新检查失败", error.message);
+  });
+}
+
+function showMessageBox(options) {
+  if (mainWindow) {
+    return dialog.showMessageBox(mainWindow, options);
+  }
+  return dialog.showMessageBox(options);
+}
+
+function checkForUpdatesFromMenu() {
+  if (!app.isPackaged) {
+    showMessageBox({
+      type: "info",
+      title: "开发模式",
+      message: "开发模式不执行安装包自动更新检查。"
+    });
+    return;
+  }
+  autoUpdater.checkForUpdates().catch((error) => {
+    dialog.showErrorBox("更新检查失败", error.message);
+  });
+}
+
 async function startBackend(port) {
   const backend = resolveBackendExecutable();
   const dataDir = app.getPath("userData");
@@ -84,7 +155,8 @@ async function startBackend(port) {
       ORDERMIND_HOST: "127.0.0.1",
       ORDERMIND_PORT: String(port),
       ORDERMIND_DATA_DIR: path.join(dataDir, "data"),
-      ORDERMIND_RESOURCE_DIR: backend.cwd
+      ORDERMIND_RESOURCE_DIR: backend.cwd,
+      ORDERMIND_UPDATE_MANIFEST_URL: process.env.ORDERMIND_UPDATE_MANIFEST_URL || ""
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true

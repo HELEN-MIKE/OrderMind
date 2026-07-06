@@ -29,7 +29,11 @@ class WindowsReleaseCiTest(unittest.TestCase):
         for script_name in ("desktop:package", "desktop:dist:mac", "desktop:dist:win", "desktop:dist"):
             with self.subTest(script=script_name):
                 self.assertIn("node scripts/run_electron_builder.cjs", scripts[script_name])
-        self.assertTrue((self.root / "scripts" / "run_electron_builder.cjs").exists())
+        builder_launcher = self.root / "scripts" / "run_electron_builder.cjs"
+        self.assertTrue(builder_launcher.exists())
+        launcher_text = builder_launcher.read_text(encoding="utf-8")
+        self.assertIn("ORDERMIND_UPDATE_BASE_URL", launcher_text)
+        self.assertIn("https://example.com/ordermind/releases", launcher_text)
 
     def test_github_actions_builds_windows_installers(self):
         workflow_path = self.root / ".github" / "workflows" / "release-build.yml"
@@ -41,6 +45,9 @@ class WindowsReleaseCiTest(unittest.TestCase):
             "npm run desktop:dist:win",
             "python -m unittest discover -s tests -v",
             "python scripts/release_check.py",
+            "python scripts/generate_update_manifest.py",
+            "release/installers/*.yml",
+            "release/installers/*.blockmap",
             "actions/upload-artifact",
             "OrderMind-windows-installers",
         ]
